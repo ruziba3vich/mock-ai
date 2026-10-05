@@ -5,9 +5,12 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	examhttp "github.com/own/mock-ai/apps/api/internal/exam/httpapi"
+	"github.com/own/mock-ai/apps/api/internal/identity/httpapi"
 )
 
-func New(logger *slog.Logger, webOrigin string) http.Handler {
+func New(logger *slog.Logger, webOrigin string, auth *httpapi.Handler, exams *examhttp.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -18,6 +21,8 @@ func New(logger *slog.Logger, webOrigin string) http.Handler {
 			"version": "v1",
 		})
 	})
+	auth.RegisterRoutes(mux)
+	exams.RegisterRoutes(mux)
 
 	return recoverer(logger, requestLogger(logger, cors(webOrigin, mux)))
 }

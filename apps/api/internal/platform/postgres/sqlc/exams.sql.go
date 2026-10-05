@@ -61,6 +61,51 @@ func (q *Queries) GetPublishedExam(ctx context.Context, id pgtype.UUID) (GetPubl
 	return i, err
 }
 
+const listExamSections = `-- name: ListExamSections :many
+SELECT id, exam_version_id, position, title, instructions, audio_url, passage
+FROM exam_sections
+WHERE exam_version_id = $1
+ORDER BY position
+`
+
+type ListExamSectionsRow struct {
+	ID            pgtype.UUID `json:"id"`
+	ExamVersionID pgtype.UUID `json:"exam_version_id"`
+	Position      int32       `json:"position"`
+	Title         string      `json:"title"`
+	Instructions  string      `json:"instructions"`
+	AudioUrl      pgtype.Text `json:"audio_url"`
+	Passage       pgtype.Text `json:"passage"`
+}
+
+func (q *Queries) ListExamSections(ctx context.Context, examVersionID pgtype.UUID) ([]ListExamSectionsRow, error) {
+	rows, err := q.db.Query(ctx, listExamSections, examVersionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExamSectionsRow{}
+	for rows.Next() {
+		var i ListExamSectionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExamVersionID,
+			&i.Position,
+			&i.Title,
+			&i.Instructions,
+			&i.AudioUrl,
+			&i.Passage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublishedExams = `-- name: ListPublishedExams :many
 SELECT
     e.id,
@@ -116,6 +161,84 @@ func (q *Queries) ListPublishedExams(ctx context.Context) ([]ListPublishedExamsR
 			&i.DurationSeconds,
 			&i.PublishedAt,
 			&i.QuestionCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listQuestionOptions = `-- name: ListQuestionOptions :many
+SELECT id, question_id, position, label, value
+FROM question_options
+WHERE question_id = $1
+ORDER BY position
+`
+
+func (q *Queries) ListQuestionOptions(ctx context.Context, questionID pgtype.UUID) ([]QuestionOption, error) {
+	rows, err := q.db.Query(ctx, listQuestionOptions, questionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QuestionOption{}
+	for rows.Next() {
+		var i QuestionOption
+		if err := rows.Scan(
+			&i.ID,
+			&i.QuestionID,
+			&i.Position,
+			&i.Label,
+			&i.Value,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSectionQuestions = `-- name: ListSectionQuestions :many
+SELECT id, section_id, position, type, prompt, points, config
+FROM questions
+WHERE section_id = $1
+ORDER BY position
+`
+
+type ListSectionQuestionsRow struct {
+	ID        pgtype.UUID    `json:"id"`
+	SectionID pgtype.UUID    `json:"section_id"`
+	Position  int32          `json:"position"`
+	Type      QuestionType   `json:"type"`
+	Prompt    string         `json:"prompt"`
+	Points    pgtype.Numeric `json:"points"`
+	Config    []byte         `json:"config"`
+}
+
+func (q *Queries) ListSectionQuestions(ctx context.Context, sectionID pgtype.UUID) ([]ListSectionQuestionsRow, error) {
+	rows, err := q.db.Query(ctx, listSectionQuestions, sectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSectionQuestionsRow{}
+	for rows.Next() {
+		var i ListSectionQuestionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SectionID,
+			&i.Position,
+			&i.Type,
+			&i.Prompt,
+			&i.Points,
+			&i.Config,
 		); err != nil {
 			return nil, err
 		}

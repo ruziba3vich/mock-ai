@@ -11,16 +11,40 @@ import (
 )
 
 type Querier interface {
+	AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error
+	CompleteAttempt(ctx context.Context, arg CompleteAttemptParams) (Attempt, error)
 	CreateAttempt(ctx context.Context, arg CreateAttemptParams) (Attempt, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (UserIdentity, error)
+	CreatePasswordCredential(ctx context.Context, arg CreatePasswordCredentialParams) error
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateVerifiedUser(ctx context.Context, arg CreateVerifiedUserParams) (User, error)
+	ExpireStaleAttemptsForExam(ctx context.Context, arg ExpireStaleAttemptsForExamParams) error
+	GetActiveAttempt(ctx context.Context, arg GetActiveAttemptParams) (Attempt, error)
 	GetAttempt(ctx context.Context, arg GetAttemptParams) (Attempt, error)
+	GetAttemptForUpdate(ctx context.Context, arg GetAttemptForUpdateParams) (Attempt, error)
+	GetBandForRawScore(ctx context.Context, arg GetBandForRawScoreParams) (pgtype.Numeric, error)
+	GetPasswordLogin(ctx context.Context, lower string) (GetPasswordLoginRow, error)
 	GetPublishedExam(ctx context.Context, id pgtype.UUID) (GetPublishedExamRow, error)
+	GetStudentProgress(ctx context.Context, userID pgtype.UUID) ([]GetStudentProgressRow, error)
+	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	GetUserByIdentity(ctx context.Context, arg GetUserByIdentityParams) (User, error)
+	GetUserBySession(ctx context.Context, tokenHash []byte) (User, error)
+	ListAttemptAnswers(ctx context.Context, attemptID pgtype.UUID) ([]AttemptAnswer, error)
+	ListAttemptScoringRows(ctx context.Context, id pgtype.UUID) ([]ListAttemptScoringRowsRow, error)
+	ListExamSections(ctx context.Context, examVersionID pgtype.UUID) ([]ListExamSectionsRow, error)
 	ListPublishedExams(ctx context.Context) ([]ListPublishedExamsRow, error)
+	ListQuestionOptions(ctx context.Context, questionID pgtype.UUID) ([]QuestionOption, error)
+	ListSectionQuestions(ctx context.Context, sectionID pgtype.UUID) ([]ListSectionQuestionsRow, error)
 	ListStudentAttempts(ctx context.Context, arg ListStudentAttemptsParams) ([]ListStudentAttemptsRow, error)
+	ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]UserRole, error)
+	MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error)
+	RevokeSession(ctx context.Context, tokenHash []byte) error
 	SaveAttemptAnswer(ctx context.Context, arg SaveAttemptAnswerParams) (AttemptAnswer, error)
+	SetAttemptAnswerScore(ctx context.Context, arg SetAttemptAnswerScoreParams) error
+	TouchSession(ctx context.Context, tokenHash []byte) error
+	UpdateExternalProfile(ctx context.Context, arg UpdateExternalProfileParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

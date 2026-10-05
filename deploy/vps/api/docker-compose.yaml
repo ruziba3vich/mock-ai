@@ -1,0 +1,33 @@
+services:
+  api:
+    image: ${IMAGE_REPOSITORY}:${IMAGE_TAG:-latest}
+    container_name: mock_ai_api
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      HTTP_ADDR: :8080
+      DATABASE_URL: ${DATABASE_URL}
+      WEB_ORIGIN: ${WEB_ORIGIN}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-}
+      SESSION_SECRET: ${SESSION_SECRET}
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks:
+      - private
+
+  migrate:
+    image: ${IMAGE_REPOSITORY}:${IMAGE_TAG:-latest}
+    profiles: ["tools"]
+    entrypoint: ["/app/mock-ai-migrate"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    networks:
+      - private
+
+networks:
+  private:
+    name: mock_ai_private
+    external: true

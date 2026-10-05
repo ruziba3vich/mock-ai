@@ -11,6 +11,48 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const completeAttempt = `-- name: CompleteAttempt :one
+UPDATE attempts
+SET status = 'scored',
+    submitted_at = now(),
+    scored_at = now(),
+    raw_score = $3,
+    band_score = $4
+WHERE id = $1 AND user_id = $2 AND status = 'in_progress'
+RETURNING id, user_id, exam_version_id, status, started_at, deadline_at, submitted_at, scored_at, raw_score, band_score, question_count
+`
+
+type CompleteAttemptParams struct {
+	ID        pgtype.UUID    `json:"id"`
+	UserID    pgtype.UUID    `json:"user_id"`
+	RawScore  pgtype.Numeric `json:"raw_score"`
+	BandScore pgtype.Numeric `json:"band_score"`
+}
+
+func (q *Queries) CompleteAttempt(ctx context.Context, arg CompleteAttemptParams) (Attempt, error) {
+	row := q.db.QueryRow(ctx, completeAttempt,
+		arg.ID,
+		arg.UserID,
+		arg.RawScore,
+		arg.BandScore,
+	)
+	var i Attempt
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ExamVersionID,
+		&i.Status,
+		&i.StartedAt,
+		&i.DeadlineAt,
+		&i.SubmittedAt,
+		&i.ScoredAt,
+		&i.RawScore,
+		&i.BandScore,
+		&i.QuestionCount,
+	)
+	return i, err
+}
+
 const createAttempt = `-- name: CreateAttempt :one
 INSERT INTO attempts (
     user_id, exam_version_id, deadline_at, question_count
@@ -35,6 +77,56 @@ type CreateAttemptParams struct {
 
 func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (Attempt, error) {
 	row := q.db.QueryRow(ctx, createAttempt, arg.UserID, arg.ID)
+	var i Attempt
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ExamVersionID,
+		&i.Status,
+		&i.StartedAt,
+		&i.DeadlineAt,
+		&i.SubmittedAt,
+		&i.ScoredAt,
+		&i.RawScore,
+		&i.BandScore,
+		&i.QuestionCount,
+	)
+	return i, err
+}
+
+const expireStaleAttemptsForExam = `-- name: ExpireStaleAttemptsForExam :exec
+UPDATE attempts
+SET status = 'expired', submitted_at = deadline_at
+WHERE user_id = $1
+  AND exam_version_id = $2
+  AND status = 'in_progress'
+  AND deadline_at <= now()
+`
+
+type ExpireStaleAttemptsForExamParams struct {
+	UserID        pgtype.UUID `json:"user_id"`
+	ExamVersionID pgtype.UUID `json:"exam_version_id"`
+}
+
+func (q *Queries) ExpireStaleAttemptsForExam(ctx context.Context, arg ExpireStaleAttemptsForExamParams) error {
+	_, err := q.db.Exec(ctx, expireStaleAttemptsForExam, arg.UserID, arg.ExamVersionID)
+	return err
+}
+
+const getActiveAttempt = `-- name: GetActiveAttempt :one
+SELECT id, user_id, exam_version_id, status, started_at, deadline_at, submitted_at, scored_at, raw_score, band_score, question_count FROM attempts
+WHERE user_id = $1
+  AND exam_version_id = $2
+  AND status = 'in_progress'
+`
+
+type GetActiveAttemptParams struct {
+	UserID        pgtype.UUID `json:"user_id"`
+	ExamVersionID pgtype.UUID `json:"exam_version_id"`
+}
+
+func (q *Queries) GetActiveAttempt(ctx context.Context, arg GetActiveAttemptParams) (Attempt, error) {
+	row := q.db.QueryRow(ctx, getActiveAttempt, arg.UserID, arg.ExamVersionID)
 	var i Attempt
 	err := row.Scan(
 		&i.ID,
@@ -78,6 +170,199 @@ func (q *Queries) GetAttempt(ctx context.Context, arg GetAttemptParams) (Attempt
 		&i.QuestionCount,
 	)
 	return i, err
+}
+
+const getAttemptForUpdate = `-- name: GetAttemptForUpdate :one
+SELECT id, user_id, exam_version_id, status, started_at, deadline_at, submitted_at, scored_at, raw_score, band_score, question_count FROM attempts
+WHERE id = $1 AND user_id = $2
+FOR UPDATE
+`
+
+type GetAttemptForUpdateParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetAttemptForUpdate(ctx context.Context, arg GetAttemptForUpdateParams) (Attempt, error) {
+	row := q.db.QueryRow(ctx, getAttemptForUpdate, arg.ID, arg.UserID)
+	var i Attempt
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ExamVersionID,
+		&i.Status,
+		&i.StartedAt,
+		&i.DeadlineAt,
+		&i.SubmittedAt,
+		&i.ScoredAt,
+		&i.RawScore,
+		&i.BandScore,
+		&i.QuestionCount,
+	)
+	return i, err
+}
+
+const getBandForRawScore = `-- name: GetBandForRawScore :one
+SELECT band
+FROM band_conversions
+WHERE exam_version_id = $1
+  AND minimum_raw_score <= $2
+ORDER BY minimum_raw_score DESC
+LIMIT 1
+`
+
+type GetBandForRawScoreParams struct {
+	ExamVersionID   pgtype.UUID    `json:"exam_version_id"`
+	MinimumRawScore pgtype.Numeric `json:"minimum_raw_score"`
+}
+
+func (q *Queries) GetBandForRawScore(ctx context.Context, arg GetBandForRawScoreParams) (pgtype.Numeric, error) {
+	row := q.db.QueryRow(ctx, getBandForRawScore, arg.ExamVersionID, arg.MinimumRawScore)
+	var band pgtype.Numeric
+	err := row.Scan(&band)
+	return band, err
+}
+
+const getStudentProgress = `-- name: GetStudentProgress :many
+SELECT
+    ev.skill,
+    count(*)::integer AS completed_attempts,
+    round(avg(a.band_score), 2) AS average_band,
+    coalesce(max(a.band_score), 0)::numeric AS best_band,
+    coalesce((array_agg(a.band_score ORDER BY a.scored_at DESC))[1], 0)::numeric AS latest_band,
+    coalesce(sum(a.raw_score), 0)::numeric AS correct_answers,
+    sum(a.question_count)::integer AS total_questions
+FROM attempts a
+JOIN exam_versions ev ON ev.id = a.exam_version_id
+WHERE a.user_id = $1 AND a.status = 'scored'
+GROUP BY ev.skill
+ORDER BY ev.skill
+`
+
+type GetStudentProgressRow struct {
+	Skill             ExamSkill      `json:"skill"`
+	CompletedAttempts int32          `json:"completed_attempts"`
+	AverageBand       pgtype.Numeric `json:"average_band"`
+	BestBand          pgtype.Numeric `json:"best_band"`
+	LatestBand        pgtype.Numeric `json:"latest_band"`
+	CorrectAnswers    pgtype.Numeric `json:"correct_answers"`
+	TotalQuestions    int32          `json:"total_questions"`
+}
+
+func (q *Queries) GetStudentProgress(ctx context.Context, userID pgtype.UUID) ([]GetStudentProgressRow, error) {
+	rows, err := q.db.Query(ctx, getStudentProgress, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetStudentProgressRow{}
+	for rows.Next() {
+		var i GetStudentProgressRow
+		if err := rows.Scan(
+			&i.Skill,
+			&i.CompletedAttempts,
+			&i.AverageBand,
+			&i.BestBand,
+			&i.LatestBand,
+			&i.CorrectAnswers,
+			&i.TotalQuestions,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAttemptAnswers = `-- name: ListAttemptAnswers :many
+SELECT attempt_id, question_id, answer, is_correct, awarded_points, revision, saved_at
+FROM attempt_answers
+WHERE attempt_id = $1
+ORDER BY saved_at
+`
+
+func (q *Queries) ListAttemptAnswers(ctx context.Context, attemptID pgtype.UUID) ([]AttemptAnswer, error) {
+	rows, err := q.db.Query(ctx, listAttemptAnswers, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AttemptAnswer{}
+	for rows.Next() {
+		var i AttemptAnswer
+		if err := rows.Scan(
+			&i.AttemptID,
+			&i.QuestionID,
+			&i.Answer,
+			&i.IsCorrect,
+			&i.AwardedPoints,
+			&i.Revision,
+			&i.SavedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAttemptScoringRows = `-- name: ListAttemptScoringRows :many
+SELECT
+    q.id AS question_id,
+    q.type AS question_type,
+    q.points,
+    aa.value AS accepted_value,
+    aa.is_case_sensitive,
+    ans.answer
+FROM attempts a
+JOIN exam_sections es ON es.exam_version_id = a.exam_version_id
+JOIN questions q ON q.section_id = es.id
+LEFT JOIN accepted_answers aa ON aa.question_id = q.id
+LEFT JOIN attempt_answers ans ON ans.attempt_id = a.id AND ans.question_id = q.id
+WHERE a.id = $1
+ORDER BY es.position, q.position, aa.position
+`
+
+type ListAttemptScoringRowsRow struct {
+	QuestionID      pgtype.UUID    `json:"question_id"`
+	QuestionType    QuestionType   `json:"question_type"`
+	Points          pgtype.Numeric `json:"points"`
+	AcceptedValue   pgtype.Text    `json:"accepted_value"`
+	IsCaseSensitive pgtype.Bool    `json:"is_case_sensitive"`
+	Answer          []byte         `json:"answer"`
+}
+
+func (q *Queries) ListAttemptScoringRows(ctx context.Context, id pgtype.UUID) ([]ListAttemptScoringRowsRow, error) {
+	rows, err := q.db.Query(ctx, listAttemptScoringRows, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAttemptScoringRowsRow{}
+	for rows.Next() {
+		var i ListAttemptScoringRowsRow
+		if err := rows.Scan(
+			&i.QuestionID,
+			&i.QuestionType,
+			&i.Points,
+			&i.AcceptedValue,
+			&i.IsCaseSensitive,
+			&i.Answer,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listStudentAttempts = `-- name: ListStudentAttempts :many
@@ -150,7 +435,18 @@ func (q *Queries) ListStudentAttempts(ctx context.Context, arg ListStudentAttemp
 
 const saveAttemptAnswer = `-- name: SaveAttemptAnswer :one
 INSERT INTO attempt_answers (attempt_id, question_id, answer)
-VALUES ($1, $2, $3)
+SELECT $1, $2, $3
+WHERE EXISTS (
+    SELECT 1
+    FROM attempts a
+    JOIN questions q ON q.id = $2
+    JOIN exam_sections es ON es.id = q.section_id
+    WHERE a.id = $1
+      AND a.user_id = $4
+      AND a.status = 'in_progress'
+      AND now() < a.deadline_at
+      AND es.exam_version_id = a.exam_version_id
+)
 ON CONFLICT (attempt_id, question_id) DO UPDATE
 SET answer = EXCLUDED.answer,
     revision = attempt_answers.revision + 1,
@@ -162,10 +458,16 @@ type SaveAttemptAnswerParams struct {
 	AttemptID  pgtype.UUID `json:"attempt_id"`
 	QuestionID pgtype.UUID `json:"question_id"`
 	Answer     []byte      `json:"answer"`
+	UserID     pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) SaveAttemptAnswer(ctx context.Context, arg SaveAttemptAnswerParams) (AttemptAnswer, error) {
-	row := q.db.QueryRow(ctx, saveAttemptAnswer, arg.AttemptID, arg.QuestionID, arg.Answer)
+	row := q.db.QueryRow(ctx, saveAttemptAnswer,
+		arg.AttemptID,
+		arg.QuestionID,
+		arg.Answer,
+		arg.UserID,
+	)
 	var i AttemptAnswer
 	err := row.Scan(
 		&i.AttemptID,
@@ -177,4 +479,28 @@ func (q *Queries) SaveAttemptAnswer(ctx context.Context, arg SaveAttemptAnswerPa
 		&i.SavedAt,
 	)
 	return i, err
+}
+
+const setAttemptAnswerScore = `-- name: SetAttemptAnswerScore :exec
+UPDATE attempt_answers
+SET is_correct = $3,
+    awarded_points = $4
+WHERE attempt_id = $1 AND question_id = $2
+`
+
+type SetAttemptAnswerScoreParams struct {
+	AttemptID     pgtype.UUID    `json:"attempt_id"`
+	QuestionID    pgtype.UUID    `json:"question_id"`
+	IsCorrect     pgtype.Bool    `json:"is_correct"`
+	AwardedPoints pgtype.Numeric `json:"awarded_points"`
+}
+
+func (q *Queries) SetAttemptAnswerScore(ctx context.Context, arg SetAttemptAnswerScoreParams) error {
+	_, err := q.db.Exec(ctx, setAttemptAnswerScore,
+		arg.AttemptID,
+		arg.QuestionID,
+		arg.IsCorrect,
+		arg.AwardedPoints,
+	)
+	return err
 }

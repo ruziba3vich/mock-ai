@@ -41,3 +41,7 @@ The generated local `.env` contains the private service addresses and credential
 ## MVP
 
 The first vertical slice is: authenticate, browse published tests, begin a timed attempt, autosave answers, submit, calculate a Listening or Reading band score, and show attempt history. See [docs/mvp.md](docs/mvp.md).
+
+Implemented API routes and payload conventions are documented in [docs/api.md](docs/api.md).
+
+Backend CI/CD and the required GitHub secrets are documented in [docs/deployment.md](docs/deployment.md).

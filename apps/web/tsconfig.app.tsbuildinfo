@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/authscreen.tsx","./src/examrunner.tsx","./src/auth.ts","./src/exams.ts","./src/main.tsx"],"version":"5.9.3"}

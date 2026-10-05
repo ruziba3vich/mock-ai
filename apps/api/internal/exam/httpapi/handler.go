@@ -1,0 +1,161 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"strconv"
+
+	"github.com/own/mock-ai/apps/api/internal/exam/application"
+	identityhttp "github.com/own/mock-ai/apps/api/internal/identity/httpapi"
+)
+
+type Handler struct {
+	service *application.Service
+	auth    *identityhttp.Handler
+	logger  *slog.Logger
+}
+
+func New(service *application.Service, auth *identityhttp.Handler, logger *slog.Logger) *Handler {
+	return &Handler{service: service, auth: auth, logger: logger}
+}
+
+func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	handle := func(pattern string, handler http.HandlerFunc) {
+		mux.Handle(pattern, h.auth.RequireUser(handler))
+	}
+	handle("GET /api/v1/exams", h.listExams)
+	handle("GET /api/v1/exams/{exam_id}", h.getExam)
+	handle("POST /api/v1/exams/{exam_id}/attempts", h.startAttempt)
+	handle("GET /api/v1/attempts/{attempt_id}", h.getAttempt)
+	handle("PUT /api/v1/attempts/{attempt_id}/answers/{question_id}", h.saveAnswer)
+	handle("POST /api/v1/attempts/{attempt_id}/submit", h.submitAttempt)
+	handle("GET /api/v1/me/attempts", h.history)
+	handle("GET /api/v1/me/progress", h.progress)
+}
+
+func (h *Handler) progress(w http.ResponseWriter, r *http.Request) {
+	user, _ := identityhttp.UserFromContext(r.Context())
+	progress, err := h.service.GetProgress(r.Context(), user.ID)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"skills": progress})
+}
+
+func (h *Handler) listExams(w http.ResponseWriter, r *http.Request) {
+	exams, err := h.service.ListExams(r.Context())
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"exams": exams})
+}
+
+func (h *Handler) getExam(w http.ResponseWriter, r *http.Request) {
+	exam, err := h.service.GetExam(r.Context(), r.PathValue("exam_id"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"exam": exam})
+}
+
+func (h *Handler) startAttempt(w http.ResponseWriter, r *http.Request) {
+	user, _ := identityhttp.UserFromContext(r.Context())
+	attempt, err := h.service.StartAttempt(r.Context(), user.ID, r.PathValue("exam_id"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"attempt": attempt})
+}
+
+func (h *Handler) getAttempt(w http.ResponseWriter, r *http.Request) {
+	user, _ := identityhttp.UserFromContext(r.Context())
+	attempt, err := h.service.GetAttempt(r.Context(), user.ID, r.PathValue("attempt_id"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"attempt": attempt})
+}
+
+func (h *Handler) saveAnswer(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Values []string `json:"values"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user, _ := identityhttp.UserFromContext(r.Context())
+	answer, err := h.service.SaveAnswer(r.Context(), user.ID, r.PathValue("attempt_id"), r.PathValue("question_id"), input.Values)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"answer": answer})
+}
+
+func (h *Handler) submitAttempt(w http.ResponseWriter, r *http.Request) {
+	user, _ := identityhttp.UserFromContext(r.Context())
+	attempt, err := h.service.SubmitAttempt(r.Context(), user.ID, r.PathValue("attempt_id"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"attempt": attempt})
+}
+
+func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
+	user, _ := identityhttp.UserFromContext(r.Context())
+	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 32)
+	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 32)
+	history, err := h.service.ListHistory(r.Context(), user.ID, int32(limit), int32(offset))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"attempts": history})
+}
+
+func (h *Handler) fail(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, application.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
+	case errors.Is(err, application.ErrAttemptClosed):
+		writeError(w, http.StatusConflict, "attempt_closed", err.Error())
+	case errors.Is(err, application.ErrInvalidAnswer):
+		writeError(w, http.StatusUnprocessableEntity, "invalid_answer", err.Error())
+	default:
+		h.logger.Error("exam request failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "exam request failed")
+	}
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
+	body := http.MaxBytesReader(w, r.Body, 1<<20)
+	decoder := json.NewDecoder(body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return errors.New("request body must be valid JSON")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("request body must contain one JSON object")
+	}
+	return nil
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}

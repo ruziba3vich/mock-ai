@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const assignUserRole = `-- name: AssignUserRole :exec
+INSERT INTO user_role_assignments (user_id, role)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type AssignUserRoleParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Role   UserRole    `json:"role"`
+}
+
+func (q *Queries) AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error {
+	_, err := q.db.Exec(ctx, assignUserRole, arg.UserID, arg.Role)
+	return err
+}
+
 const createIdentity = `-- name: CreateIdentity :one
 INSERT INTO user_identities (
     user_id, provider, provider_subject, provider_email, profile
@@ -49,6 +65,66 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 	return i, err
 }
 
+const createPasswordCredential = `-- name: CreatePasswordCredential :exec
+INSERT INTO password_credentials (user_id, password_hash)
+VALUES ($1, $2)
+`
+
+type CreatePasswordCredentialParams struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	PasswordHash string      `json:"password_hash"`
+}
+
+func (q *Queries) CreatePasswordCredential(ctx context.Context, arg CreatePasswordCredentialParams) error {
+	_, err := q.db.Exec(ctx, createPasswordCredential, arg.UserID, arg.PasswordHash)
+	return err
+}
+
+const createSession = `-- name: CreateSession :one
+INSERT INTO sessions (
+    user_id, token_hash, expires_at, user_agent, ip_address
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    NULLIF($4, ''),
+    NULLIF($5, '')::inet
+)
+RETURNING id, user_id, token_hash, expires_at, last_seen_at, user_agent, ip_address, created_at, revoked_at
+`
+
+type CreateSessionParams struct {
+	UserID    pgtype.UUID        `json:"user_id"`
+	TokenHash []byte             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UserAgent interface{}        `json:"user_agent"`
+	IpAddress interface{}        `json:"ip_address"`
+}
+
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+	row := q.db.QueryRow(ctx, createSession,
+		arg.UserID,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.UserAgent,
+		arg.IpAddress,
+	)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.LastSeenAt,
+		&i.UserAgent,
+		&i.IpAddress,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (display_name, avatar_url, email)
 VALUES ($1, $2, $3)
@@ -63,6 +139,95 @@ type CreateUserParams struct {
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser, arg.DisplayName, arg.AvatarUrl, arg.Email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Email,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const createVerifiedUser = `-- name: CreateVerifiedUser :one
+INSERT INTO users (display_name, avatar_url, email, email_verified_at)
+VALUES ($1, $2, $3, now())
+RETURNING id, display_name, avatar_url, email, email_verified_at, created_at, updated_at, deleted_at
+`
+
+type CreateVerifiedUserParams struct {
+	DisplayName string      `json:"display_name"`
+	AvatarUrl   pgtype.Text `json:"avatar_url"`
+	Email       pgtype.Text `json:"email"`
+}
+
+func (q *Queries) CreateVerifiedUser(ctx context.Context, arg CreateVerifiedUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, createVerifiedUser, arg.DisplayName, arg.AvatarUrl, arg.Email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Email,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getPasswordLogin = `-- name: GetPasswordLogin :one
+SELECT
+    u.id,
+    u.display_name,
+    u.avatar_url,
+    u.email,
+    u.email_verified_at,
+    u.created_at,
+    p.password_hash
+FROM users u
+JOIN password_credentials p ON p.user_id = u.id
+WHERE lower(u.email) = lower($1)
+  AND u.deleted_at IS NULL
+`
+
+type GetPasswordLoginRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	DisplayName     string             `json:"display_name"`
+	AvatarUrl       pgtype.Text        `json:"avatar_url"`
+	Email           pgtype.Text        `json:"email"`
+	EmailVerifiedAt pgtype.Timestamptz `json:"email_verified_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	PasswordHash    string             `json:"password_hash"`
+}
+
+func (q *Queries) GetPasswordLogin(ctx context.Context, lower string) (GetPasswordLoginRow, error) {
+	row := q.db.QueryRow(ctx, getPasswordLogin, lower)
+	var i GetPasswordLoginRow
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Email,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.PasswordHash,
+	)
+	return i, err
+}
+
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, display_name, avatar_url, email, email_verified_at, created_at, updated_at, deleted_at FROM users
+WHERE lower(email) = lower($1) AND deleted_at IS NULL
+`
+
+func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, lower)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -114,6 +279,145 @@ type GetUserByIdentityParams struct {
 
 func (q *Queries) GetUserByIdentity(ctx context.Context, arg GetUserByIdentityParams) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByIdentity, arg.Provider, arg.ProviderSubject)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Email,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getUserBySession = `-- name: GetUserBySession :one
+SELECT
+    u.id,
+    u.display_name,
+    u.avatar_url,
+    u.email,
+    u.email_verified_at,
+    u.created_at,
+    u.updated_at,
+    u.deleted_at
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.token_hash = $1
+  AND s.revoked_at IS NULL
+  AND s.expires_at > now()
+  AND u.deleted_at IS NULL
+`
+
+func (q *Queries) GetUserBySession(ctx context.Context, tokenHash []byte) (User, error) {
+	row := q.db.QueryRow(ctx, getUserBySession, tokenHash)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Email,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const listUserRoles = `-- name: ListUserRoles :many
+SELECT role FROM user_role_assignments
+WHERE user_id = $1
+ORDER BY role
+`
+
+func (q *Queries) ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]UserRole, error) {
+	rows, err := q.db.Query(ctx, listUserRoles, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UserRole{}
+	for rows.Next() {
+		var role UserRole
+		if err := rows.Scan(&role); err != nil {
+			return nil, err
+		}
+		items = append(items, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markEmailVerified = `-- name: MarkEmailVerified :one
+UPDATE users
+SET email_verified_at = COALESCE(email_verified_at, now()),
+    updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, display_name, avatar_url, email, email_verified_at, created_at, updated_at, deleted_at
+`
+
+func (q *Queries) MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, markEmailVerified, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Email,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const revokeSession = `-- name: RevokeSession :exec
+UPDATE sessions
+SET revoked_at = now()
+WHERE token_hash = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeSession(ctx context.Context, tokenHash []byte) error {
+	_, err := q.db.Exec(ctx, revokeSession, tokenHash)
+	return err
+}
+
+const touchSession = `-- name: TouchSession :exec
+UPDATE sessions
+SET last_seen_at = now()
+WHERE token_hash = $1
+  AND revoked_at IS NULL
+  AND expires_at > now()
+`
+
+func (q *Queries) TouchSession(ctx context.Context, tokenHash []byte) error {
+	_, err := q.db.Exec(ctx, touchSession, tokenHash)
+	return err
+}
+
+const updateExternalProfile = `-- name: UpdateExternalProfile :one
+UPDATE users
+SET display_name = $2,
+    avatar_url = COALESCE($3, avatar_url),
+    updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, display_name, avatar_url, email, email_verified_at, created_at, updated_at, deleted_at
+`
+
+type UpdateExternalProfileParams struct {
+	ID          pgtype.UUID `json:"id"`
+	DisplayName string      `json:"display_name"`
+	AvatarUrl   pgtype.Text `json:"avatar_url"`
+}
+
+func (q *Queries) UpdateExternalProfile(ctx context.Context, arg UpdateExternalProfileParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateExternalProfile, arg.ID, arg.DisplayName, arg.AvatarUrl)
 	var i User
 	err := row.Scan(
 		&i.ID,
