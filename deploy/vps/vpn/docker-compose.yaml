@@ -1,0 +1,33 @@
+services:
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: mock_ai_wireguard
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: Asia/Tashkent
+      SERVERURL: 46.8.176.85
+      SERVERPORT: 51820
+      PEERS: macbook
+      PEERDNS: auto
+      INTERNAL_SUBNET: 10.66.66.0
+      ALLOWEDIPS: 10.66.66.0/24,172.30.50.0/24
+      LOG_CONFS: "false"
+    ports:
+      - "51820:51820/udp"
+    volumes:
+      - ./config:/config
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: "1"
+    networks:
+      private:
+        ipv4_address: 172.30.50.2
+
+networks:
+  private:
+    name: mock_ai_private
+    external: true
+

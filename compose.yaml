@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: mock_ai
+      POSTGRES_PASSWORD: mock_ai
+      POSTGRES_DB: mock_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mock_ai -d mock_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./apps/api/db/migrations:/migrations:ro
+    command: ["-path", "/migrations", "-database", "postgres://mock_ai:mock_ai@postgres:5432/mock_ai?sslmode=disable", "up"]
+
+volumes:
+  postgres_data:
+
