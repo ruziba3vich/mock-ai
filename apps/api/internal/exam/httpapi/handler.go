@@ -31,12 +31,15 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	handle("POST /api/v1/exams/{exam_id}/attempts", h.startAttempt)
 	handle("GET /api/v1/attempts/{attempt_id}", h.getAttempt)
 	handle("GET /api/v1/attempts/{attempt_id}/review", h.getAttemptReview)
+	handle("POST /api/v1/attempts/{attempt_id}/reviewed", h.markAttemptReviewed)
 	handle("PUT /api/v1/attempts/{attempt_id}/answers/{question_id}", h.saveAnswer)
 	handle("POST /api/v1/attempts/{attempt_id}/submit", h.submitAttempt)
 	handle("GET /api/v1/me/attempts", h.history)
 	handle("GET /api/v1/me/progress", h.progress)
 	handle("GET /api/v1/practice/questions", h.listPracticeQuestions)
 	handle("POST /api/v1/practice/questions/{question_id}/check", h.checkPracticeAnswer)
+	handle("GET /api/v1/me/study-plan", h.getStudyPlan)
+	handle("PUT /api/v1/me/study-profile", h.updateStudyProfile)
 }
 
 func (h *Handler) listPracticeQuestions(w http.ResponseWriter, r *http.Request) {
@@ -59,12 +62,38 @@ func (h *Handler) checkPracticeAnswer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	feedback, err := h.service.CheckPracticeAnswer(r.Context(), r.PathValue("question_id"), input.Values)
+	user, _ := identityhttp.UserFromContext(r.Context())
+	feedback, err := h.service.CheckPracticeAnswer(r.Context(), user.ID, r.PathValue("question_id"), input.Values)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+}
+
+func (h *Handler) getStudyPlan(w http.ResponseWriter, r *http.Request) {
+	user, _ := identityhttp.UserFromContext(r.Context())
+	plan, err := h.service.GetStudyPlan(r.Context(), user.ID)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"plan": plan})
+}
+
+func (h *Handler) updateStudyProfile(w http.ResponseWriter, r *http.Request) {
+	var input application.StudyProfileInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user, _ := identityhttp.UserFromContext(r.Context())
+	profile, err := h.service.UpdateStudyProfile(r.Context(), user.ID, input)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"profile": profile})
 }
 
 func (h *Handler) getAttemptReview(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +104,15 @@ func (h *Handler) getAttemptReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"review": review})
+}
+
+func (h *Handler) markAttemptReviewed(w http.ResponseWriter, r *http.Request) {
+	user, _ := identityhttp.UserFromContext(r.Context())
+	if err := h.service.MarkAttemptReviewed(r.Context(), user.ID, r.PathValue("attempt_id")); err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) progress(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +210,8 @@ func (h *Handler) fail(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "attempt_closed", err.Error())
 	case errors.Is(err, application.ErrInvalidAnswer):
 		writeError(w, http.StatusUnprocessableEntity, "invalid_answer", err.Error())
+	case errors.Is(err, application.ErrInvalidProfile):
+		writeError(w, http.StatusUnprocessableEntity, "invalid_profile", err.Error())
 	default:
 		h.logger.Error("exam request failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "exam request failed")

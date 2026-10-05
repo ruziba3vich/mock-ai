@@ -134,3 +134,41 @@ type ReviewQuestion struct {
 	Correct         bool     `json:"correct"`
 	Explanation     string   `json:"explanation"`
 }
+
+type StudyProfile struct {
+	TargetBand       float64 `json:"target_band"`
+	ExamDate         string  `json:"exam_date,omitempty"`
+	Track            string  `json:"track"`
+	DailyGoalMinutes int32   `json:"daily_goal_minutes"`
+}
+
+type StudyProfileInput struct {
+	TargetBand       float64 `json:"target_band"`
+	ExamDate         string  `json:"exam_date"`
+	Track            string  `json:"track"`
+	DailyGoalMinutes int32   `json:"daily_goal_minutes"`
+}
+
+type StudyRecommendation struct {
+	Skill        string `json:"skill"`
+	QuestionType string `json:"question_type"`
+	Reason       string `json:"reason"`
+}
+
+type DailyStudyActivity struct {
+	Date            string `json:"date"`
+	PracticeAnswers int32  `json:"practice_answers"`
+	MocksCompleted  int32  `json:"mocks_completed"`
+}
+
+type StudyPlan struct {
+	Profile          StudyProfile         `json:"profile"`
+	StreakDays       int32                `json:"streak_days"`
+	PracticeToday    int32                `json:"practice_today"`
+	MocksToday       int32                `json:"mocks_today"`
+	MocksThisWeek    int32                `json:"mocks_this_week"`
+	ReviewsToday     int32                `json:"reviews_today"`
+	EstimatedMinutes int32                `json:"estimated_minutes_today"`
+	Recommendation   StudyRecommendation  `json:"recommendation"`
+	Week             []DailyStudyActivity `json:"week"`
+}

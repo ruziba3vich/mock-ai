@@ -29,6 +29,7 @@ Google login automatically links to an existing account when Google returns the 
 | `GET` | `/api/v1/me/attempts` | Return paginated attempt history |
 | `GET` | `/api/v1/me/progress` | Aggregate score, band, and accuracy statistics per skill |
 | `GET` | `/api/v1/attempts/{attempt_id}/review` | Return owned scored answers, accepted answers, and explanations |
+| `POST` | `/api/v1/attempts/{attempt_id}/reviewed` | Record an owned scored-attempt review as study activity |
 
 ## Focused practice
 
@@ -38,5 +39,14 @@ Google login automatically links to an existing account when Google returns the 
 | `POST` | `/api/v1/practice/questions/{question_id}/check` | Check one practice answer and reveal its accepted answer and explanation |
 
 Practice checks accept the same `{"values":["answer"]}` shape as mock answers. Practice content is separated from scored mock content at the database level, so checking an answer cannot expose a mock-exam answer key. Practice checks are formative and do not affect band history.
+
+## Study planning
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/me/study-plan` | Return study profile, streak, daily activity, seven-day activity, and a weak-area recommendation |
+| `PUT` | `/api/v1/me/study-profile` | Update target band, exam date, IELTS track, and daily minute goal |
+
+Study profile updates accept `target_band` in half-band steps from 4.0 to 9.0, an optional future `exam_date` in `YYYY-MM-DD` form, `track` as `academic` or `general_training`, and `daily_goal_minutes` from 10 to 180. General Training content is reserved by the API but is not yet exposed in the student UI.
 
 Answer saves accept `{"values":["answer"]}`. Multiple-select questions use more than one value. Each successful overwrite increments the saved answer revision.

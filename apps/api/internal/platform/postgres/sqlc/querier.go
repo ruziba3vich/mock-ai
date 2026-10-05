@@ -19,6 +19,7 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateVerifiedUser(ctx context.Context, arg CreateVerifiedUserParams) (User, error)
+	EnsureStudentProfile(ctx context.Context, userID pgtype.UUID) error
 	ExpireStaleAttemptsForExam(ctx context.Context, arg ExpireStaleAttemptsForExamParams) error
 	GetActiveAttempt(ctx context.Context, arg GetActiveAttemptParams) (Attempt, error)
 	GetAttempt(ctx context.Context, arg GetAttemptParams) (Attempt, error)
@@ -28,11 +29,16 @@ type Querier interface {
 	GetPasswordLogin(ctx context.Context, lower string) (GetPasswordLoginRow, error)
 	GetPracticeAnswerKey(ctx context.Context, id pgtype.UUID) ([]GetPracticeAnswerKeyRow, error)
 	GetPublishedExam(ctx context.Context, id pgtype.UUID) (GetPublishedExamRow, error)
+	GetQuestionTypePerformance(ctx context.Context, studentID pgtype.UUID) ([]GetQuestionTypePerformanceRow, error)
+	GetStudentProfile(ctx context.Context, userID pgtype.UUID) (StudentProfile, error)
 	GetStudentProgress(ctx context.Context, userID pgtype.UUID) ([]GetStudentProgressRow, error)
+	GetStudyActivityDays(ctx context.Context, studentID pgtype.UUID) ([]pgtype.Date, error)
+	GetStudyToday(ctx context.Context, studentID pgtype.UUID) (GetStudyTodayRow, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	GetUserByIdentity(ctx context.Context, arg GetUserByIdentityParams) (User, error)
 	GetUserBySession(ctx context.Context, tokenHash []byte) (User, error)
+	GetWeeklyStudyActivity(ctx context.Context, studentID pgtype.UUID) ([]GetWeeklyStudyActivityRow, error)
 	ListAttemptAnswers(ctx context.Context, attemptID pgtype.UUID) ([]AttemptAnswer, error)
 	ListAttemptScoringRows(ctx context.Context, id pgtype.UUID) ([]ListAttemptScoringRowsRow, error)
 	ListExamSections(ctx context.Context, examVersionID pgtype.UUID) ([]ListExamSectionsRow, error)
@@ -43,11 +49,14 @@ type Querier interface {
 	ListStudentAttempts(ctx context.Context, arg ListStudentAttemptsParams) ([]ListStudentAttemptsRow, error)
 	ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]UserRole, error)
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error)
+	RecordAttemptReview(ctx context.Context, arg RecordAttemptReviewParams) (pgtype.UUID, error)
+	RecordPracticeAnswer(ctx context.Context, arg RecordPracticeAnswerParams) error
 	RevokeSession(ctx context.Context, tokenHash []byte) error
 	SaveAttemptAnswer(ctx context.Context, arg SaveAttemptAnswerParams) (AttemptAnswer, error)
 	SetAttemptAnswerScore(ctx context.Context, arg SetAttemptAnswerScoreParams) error
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	UpdateExternalProfile(ctx context.Context, arg UpdateExternalProfileParams) (User, error)
+	UpdateStudentProfile(ctx context.Context, arg UpdateStudentProfileParams) (StudentProfile, error)
 }
 
 var _ Querier = (*Queries)(nil)

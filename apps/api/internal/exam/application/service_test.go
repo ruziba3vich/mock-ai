@@ -1,6 +1,10 @@
 package application
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
 
 func TestCleanAnswers(t *testing.T) {
 	tests := []struct {
@@ -35,5 +39,21 @@ func TestCleanAnswers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestUpdateStudyProfileRejectsInvalidValues(t *testing.T) {
+	service := &Service{}
+	tests := []StudyProfileInput{
+		{TargetBand: 9.5, Track: "academic", DailyGoalMinutes: 20},
+		{TargetBand: 7.2, Track: "academic", DailyGoalMinutes: 20},
+		{TargetBand: 7, Track: "unsupported", DailyGoalMinutes: 20},
+		{TargetBand: 7, Track: "academic", DailyGoalMinutes: 5},
+		{TargetBand: 7, Track: "academic", DailyGoalMinutes: 20, ExamDate: "not-a-date"},
+	}
+	for _, input := range tests {
+		if _, err := service.UpdateStudyProfile(context.Background(), "user", input); !errors.Is(err, ErrInvalidProfile) {
+			t.Fatalf("UpdateStudyProfile(%+v) error = %v, want ErrInvalidProfile", input, err)
+		}
 	}
 }

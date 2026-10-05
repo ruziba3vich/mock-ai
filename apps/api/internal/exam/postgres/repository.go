@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -336,7 +337,11 @@ func (r *Repository) ListPracticeQuestions(ctx context.Context, skill, questionT
 	return questions, nil
 }
 
-func (r *Repository) CheckPracticeAnswer(ctx context.Context, questionID string, values []string) (application.PracticeFeedback, error) {
+func (r *Repository) CheckPracticeAnswer(ctx context.Context, userID, questionID string, values []string) (application.PracticeFeedback, error) {
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return application.PracticeFeedback{}, application.ErrNotFound
+	}
 	id, err := parseUUID(questionID)
 	if err != nil {
 		return application.PracticeFeedback{}, application.ErrNotFound
@@ -354,12 +359,19 @@ func (r *Repository) CheckPracticeAnswer(ctx context.Context, questionID string,
 		accepted[i] = acceptedAnswer{value: row.Value, caseSensitive: row.IsCaseSensitive}
 		answerValues[i] = row.Value
 	}
-	return application.PracticeFeedback{
+	feedback := application.PracticeFeedback{
 		QuestionID:     questionID,
 		Correct:        answerCorrect(rows[0].Type, values, accepted),
 		AcceptedAnswer: answerValues,
 		Explanation:    rows[0].Explanation,
-	}, nil
+	}
+	payload, _ := json.Marshal(map[string][]string{"values": values})
+	if err := r.queries.RecordPracticeAnswer(ctx, db.RecordPracticeAnswerParams{
+		UserID: userUUID, QuestionID: id, Answer: payload, IsCorrect: feedback.Correct,
+	}); err != nil {
+		return application.PracticeFeedback{}, fmt.Errorf("record practice answer: %w", err)
+	}
+	return feedback, nil
 }
 
 func (r *Repository) GetAttemptReview(ctx context.Context, userID, attemptID string) (application.AttemptReview, error) {
@@ -401,6 +413,156 @@ func (r *Repository) GetAttemptReview(ctx context.Context, userID, attemptID str
 		review.Questions[index].AcceptedAnswer = append(review.Questions[index].AcceptedAnswer, row.AcceptedValue)
 	}
 	return review, nil
+}
+
+func (r *Repository) MarkAttemptReviewed(ctx context.Context, userID, attemptID string) error {
+	params, err := attemptParams(userID, attemptID)
+	if err != nil {
+		return application.ErrNotFound
+	}
+	_, err = r.queries.RecordAttemptReview(ctx, db.RecordAttemptReviewParams{StudentID: params.UserID, AttemptID: params.ID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("record attempt review: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) GetStudyPlan(ctx context.Context, userID string) (application.StudyPlan, error) {
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return application.StudyPlan{}, application.ErrNotFound
+	}
+	if err := r.queries.EnsureStudentProfile(ctx, userUUID); err != nil {
+		return application.StudyPlan{}, fmt.Errorf("ensure student profile: %w", err)
+	}
+	profileRow, err := r.queries.GetStudentProfile(ctx, userUUID)
+	if err != nil {
+		return application.StudyPlan{}, fmt.Errorf("get student profile: %w", err)
+	}
+	today, err := r.queries.GetStudyToday(ctx, userUUID)
+	if err != nil {
+		return application.StudyPlan{}, fmt.Errorf("get today's study: %w", err)
+	}
+	days, err := r.queries.GetStudyActivityDays(ctx, userUUID)
+	if err != nil {
+		return application.StudyPlan{}, fmt.Errorf("get study activity days: %w", err)
+	}
+	weeklyRows, err := r.queries.GetWeeklyStudyActivity(ctx, userUUID)
+	if err != nil {
+		return application.StudyPlan{}, fmt.Errorf("get weekly study activity: %w", err)
+	}
+	performance, err := r.queries.GetQuestionTypePerformance(ctx, userUUID)
+	if err != nil {
+		return application.StudyPlan{}, fmt.Errorf("get question type performance: %w", err)
+	}
+	progress, err := r.GetProgress(ctx, userID)
+	if err != nil {
+		return application.StudyPlan{}, err
+	}
+
+	skill := "reading"
+	if len(progress) > 0 {
+		skill = progress[0].Skill
+		for _, item := range progress[1:] {
+			current := progressBySkill(progress, skill)
+			if item.AverageBand < current.AverageBand {
+				skill = item.Skill
+			}
+		}
+	}
+	questionType := "multiple_choice"
+	reason := "Build a reliable baseline with a short accuracy session."
+	if len(performance) > 0 {
+		questionType = string(performance[0].Type)
+		accuracy := 0
+		if performance[0].Attempts > 0 {
+			accuracy = int(float64(performance[0].Correct) / float64(performance[0].Attempts) * 100)
+		}
+		reason = fmt.Sprintf("This is your lowest recent practice area at %d%% accuracy.", accuracy)
+	} else if len(progress) > 0 {
+		reason = fmt.Sprintf("%s%s currently has your lower average band.", strings.ToUpper(skill[:1]), skill[1:])
+	}
+
+	week := make([]application.DailyStudyActivity, len(weeklyRows))
+	for i, row := range weeklyRows {
+		week[i] = application.DailyStudyActivity{Date: dateString(row.Day), PracticeAnswers: row.PracticeAnswers, MocksCompleted: row.MocksCompleted}
+	}
+	return application.StudyPlan{
+		Profile: toStudyProfile(profileRow), StreakDays: activityStreak(days),
+		PracticeToday: today.PracticeAnswers, MocksToday: today.MocksCompleted,
+		MocksThisWeek: today.MocksThisWeek, ReviewsToday: today.ReviewsToday,
+		EstimatedMinutes: today.PracticeAnswers*2 + today.MocksCompleted*30 + today.ReviewsToday*5,
+		Recommendation:   application.StudyRecommendation{Skill: skill, QuestionType: questionType, Reason: reason},
+		Week:             week,
+	}, nil
+}
+
+func (r *Repository) UpdateStudyProfile(ctx context.Context, userID string, input application.StudyProfileInput) (application.StudyProfile, error) {
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		return application.StudyProfile{}, application.ErrNotFound
+	}
+	examDate := pgtype.Date{}
+	if input.ExamDate != "" {
+		parsed, _ := time.Parse("2006-01-02", input.ExamDate)
+		examDate = pgtype.Date{Time: parsed, Valid: true}
+	}
+	row, err := r.queries.UpdateStudentProfile(ctx, db.UpdateStudentProfileParams{
+		UserID: userUUID, TargetBand: numeric(input.TargetBand), ExamDate: examDate,
+		Track: db.IeltsTrack(input.Track), DailyGoalMinutes: input.DailyGoalMinutes,
+	})
+	if err != nil {
+		return application.StudyProfile{}, fmt.Errorf("update student profile: %w", err)
+	}
+	return toStudyProfile(row), nil
+}
+
+func toStudyProfile(row db.StudentProfile) application.StudyProfile {
+	profile := application.StudyProfile{
+		TargetBand: numericFloat(row.TargetBand), Track: string(row.Track), DailyGoalMinutes: row.DailyGoalMinutes,
+	}
+	if row.ExamDate.Valid {
+		profile.ExamDate = row.ExamDate.Time.Format("2006-01-02")
+	}
+	return profile
+}
+
+func dateString(value pgtype.Date) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.Time.Format("2006-01-02")
+}
+
+func activityStreak(days []pgtype.Date) int32 {
+	active := make(map[string]bool, len(days))
+	for _, day := range days {
+		if day.Valid {
+			active[day.Time.Format("2006-01-02")] = true
+		}
+	}
+	cursor := time.Now().UTC().Truncate(24 * time.Hour)
+	if !active[cursor.Format("2006-01-02")] {
+		cursor = cursor.AddDate(0, 0, -1)
+	}
+	var streak int32
+	for active[cursor.Format("2006-01-02")] {
+		streak++
+		cursor = cursor.AddDate(0, 0, -1)
+	}
+	return streak
+}
+
+func progressBySkill(progress []application.SkillProgress, skill string) application.SkillProgress {
+	for _, item := range progress {
+		if item.Skill == skill {
+			return item
+		}
+	}
+	return application.SkillProgress{}
 }
 
 type scoreQuestion struct {

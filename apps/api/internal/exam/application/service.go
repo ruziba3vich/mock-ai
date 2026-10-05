@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 )
 
 var (
-	ErrNotFound      = errors.New("exam or attempt not found")
-	ErrAttemptClosed = errors.New("attempt is closed or its time has expired")
-	ErrInvalidAnswer = errors.New("answer must contain between one and ten values")
+	ErrNotFound       = errors.New("exam or attempt not found")
+	ErrAttemptClosed  = errors.New("attempt is closed or its time has expired")
+	ErrInvalidAnswer  = errors.New("answer must contain between one and ten values")
+	ErrInvalidProfile = errors.New("study profile values are invalid")
 )
 
 var questionTypes = map[string]struct{}{
@@ -28,8 +30,11 @@ type Repository interface {
 	ListHistory(ctx context.Context, userID string, limit, offset int32) ([]HistoryItem, error)
 	GetProgress(ctx context.Context, userID string) ([]SkillProgress, error)
 	ListPracticeQuestions(ctx context.Context, skill, questionType string, limit int32) ([]PracticeQuestion, error)
-	CheckPracticeAnswer(ctx context.Context, questionID string, values []string) (PracticeFeedback, error)
+	CheckPracticeAnswer(ctx context.Context, userID, questionID string, values []string) (PracticeFeedback, error)
 	GetAttemptReview(ctx context.Context, userID, attemptID string) (AttemptReview, error)
+	GetStudyPlan(ctx context.Context, userID string) (StudyPlan, error)
+	UpdateStudyProfile(ctx context.Context, userID string, input StudyProfileInput) (StudyProfile, error)
+	MarkAttemptReviewed(ctx context.Context, userID, attemptID string) error
 }
 
 func (s *Service) GetProgress(ctx context.Context, userID string) ([]SkillProgress, error) {
@@ -51,16 +56,43 @@ func (s *Service) ListPracticeQuestions(ctx context.Context, skill, questionType
 	return s.repository.ListPracticeQuestions(ctx, skill, questionType, limit)
 }
 
-func (s *Service) CheckPracticeAnswer(ctx context.Context, questionID string, values []string) (PracticeFeedback, error) {
+func (s *Service) CheckPracticeAnswer(ctx context.Context, userID, questionID string, values []string) (PracticeFeedback, error) {
 	cleaned, err := cleanAnswers(values)
 	if err != nil {
 		return PracticeFeedback{}, err
 	}
-	return s.repository.CheckPracticeAnswer(ctx, questionID, cleaned)
+	return s.repository.CheckPracticeAnswer(ctx, userID, questionID, cleaned)
+}
+
+func (s *Service) GetStudyPlan(ctx context.Context, userID string) (StudyPlan, error) {
+	return s.repository.GetStudyPlan(ctx, userID)
+}
+
+func (s *Service) UpdateStudyProfile(ctx context.Context, userID string, input StudyProfileInput) (StudyProfile, error) {
+	if input.TargetBand < 4 || input.TargetBand > 9 || input.TargetBand*2 != float64(int(input.TargetBand*2)) {
+		return StudyProfile{}, ErrInvalidProfile
+	}
+	if input.Track != "academic" && input.Track != "general_training" {
+		return StudyProfile{}, ErrInvalidProfile
+	}
+	if input.DailyGoalMinutes < 10 || input.DailyGoalMinutes > 180 {
+		return StudyProfile{}, ErrInvalidProfile
+	}
+	if input.ExamDate != "" {
+		date, err := time.Parse("2006-01-02", input.ExamDate)
+		if err != nil || date.Before(time.Now().UTC().Truncate(24*time.Hour)) {
+			return StudyProfile{}, ErrInvalidProfile
+		}
+	}
+	return s.repository.UpdateStudyProfile(ctx, userID, input)
 }
 
 func (s *Service) GetAttemptReview(ctx context.Context, userID, attemptID string) (AttemptReview, error) {
 	return s.repository.GetAttemptReview(ctx, userID, attemptID)
+}
+
+func (s *Service) MarkAttemptReviewed(ctx context.Context, userID, attemptID string) error {
+	return s.repository.MarkAttemptReviewed(ctx, userID, attemptID)
 }
 
 type Service struct{ repository Repository }

@@ -226,6 +226,48 @@ func (ns NullIdentityProvider) Value() (driver.Value, error) {
 	return string(ns.IdentityProvider), nil
 }
 
+type IeltsTrack string
+
+const (
+	IeltsTrackAcademic        IeltsTrack = "academic"
+	IeltsTrackGeneralTraining IeltsTrack = "general_training"
+)
+
+func (e *IeltsTrack) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = IeltsTrack(s)
+	case string:
+		*e = IeltsTrack(s)
+	default:
+		return fmt.Errorf("unsupported scan type for IeltsTrack: %T", src)
+	}
+	return nil
+}
+
+type NullIeltsTrack struct {
+	IeltsTrack IeltsTrack `json:"ielts_track"`
+	Valid      bool       `json:"valid"` // Valid is true if IeltsTrack is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullIeltsTrack) Scan(value interface{}) error {
+	if value == nil {
+		ns.IeltsTrack, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.IeltsTrack.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullIeltsTrack) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.IeltsTrack), nil
+}
+
 type QuestionType string
 
 const (
@@ -273,6 +315,47 @@ func (ns NullQuestionType) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.QuestionType), nil
+}
+
+type StudyEventType string
+
+const (
+	StudyEventTypeAttemptReview StudyEventType = "attempt_review"
+)
+
+func (e *StudyEventType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = StudyEventType(s)
+	case string:
+		*e = StudyEventType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for StudyEventType: %T", src)
+	}
+	return nil
+}
+
+type NullStudyEventType struct {
+	StudyEventType StudyEventType `json:"study_event_type"`
+	Valid          bool           `json:"valid"` // Valid is true if StudyEventType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullStudyEventType) Scan(value interface{}) error {
+	if value == nil {
+		ns.StudyEventType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.StudyEventType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullStudyEventType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.StudyEventType), nil
 }
 
 type UserRole string
@@ -404,6 +487,15 @@ type PasswordCredential struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
+type PracticeAnswer struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	QuestionID  pgtype.UUID        `json:"question_id"`
+	Answer      []byte             `json:"answer"`
+	IsCorrect   bool               `json:"is_correct"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+}
+
 type Question struct {
 	ID          pgtype.UUID    `json:"id"`
 	SectionID   pgtype.UUID    `json:"section_id"`
@@ -433,6 +525,23 @@ type Session struct {
 	IpAddress  *netip.Addr        `json:"ip_address"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
+}
+
+type StudentProfile struct {
+	UserID           pgtype.UUID        `json:"user_id"`
+	TargetBand       pgtype.Numeric     `json:"target_band"`
+	ExamDate         pgtype.Date        `json:"exam_date"`
+	Track            IeltsTrack         `json:"track"`
+	DailyGoalMinutes int32              `json:"daily_goal_minutes"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type StudyEvent struct {
+	ID         pgtype.UUID        `json:"id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EventType  StudyEventType     `json:"event_type"`
+	AttemptID  pgtype.UUID        `json:"attempt_id"`
+	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
 }
 
 type User struct {
