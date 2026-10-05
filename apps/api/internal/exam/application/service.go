@@ -12,6 +12,12 @@ var (
 	ErrInvalidAnswer = errors.New("answer must contain between one and ten values")
 )
 
+var questionTypes = map[string]struct{}{
+	"multiple_choice": {}, "multiple_select": {}, "true_false_not_given": {},
+	"yes_no_not_given": {}, "short_answer": {}, "sentence_completion": {},
+	"summary_completion": {}, "matching": {}, "map_labeling": {},
+}
+
 type Repository interface {
 	ListExams(ctx context.Context) ([]ExamSummary, error)
 	GetExam(ctx context.Context, examID string) (Exam, error)
@@ -21,10 +27,40 @@ type Repository interface {
 	SubmitAttempt(ctx context.Context, userID, attemptID string) (Attempt, error)
 	ListHistory(ctx context.Context, userID string, limit, offset int32) ([]HistoryItem, error)
 	GetProgress(ctx context.Context, userID string) ([]SkillProgress, error)
+	ListPracticeQuestions(ctx context.Context, skill, questionType string, limit int32) ([]PracticeQuestion, error)
+	CheckPracticeAnswer(ctx context.Context, questionID string, values []string) (PracticeFeedback, error)
+	GetAttemptReview(ctx context.Context, userID, attemptID string) (AttemptReview, error)
 }
 
 func (s *Service) GetProgress(ctx context.Context, userID string) ([]SkillProgress, error) {
 	return s.repository.GetProgress(ctx, userID)
+}
+
+func (s *Service) ListPracticeQuestions(ctx context.Context, skill, questionType string, limit int32) ([]PracticeQuestion, error) {
+	if skill != "" && skill != "reading" && skill != "listening" {
+		return nil, ErrNotFound
+	}
+	if questionType != "" {
+		if _, ok := questionTypes[questionType]; !ok {
+			return nil, ErrNotFound
+		}
+	}
+	if limit <= 0 || limit > 10 {
+		limit = 5
+	}
+	return s.repository.ListPracticeQuestions(ctx, skill, questionType, limit)
+}
+
+func (s *Service) CheckPracticeAnswer(ctx context.Context, questionID string, values []string) (PracticeFeedback, error) {
+	cleaned, err := cleanAnswers(values)
+	if err != nil {
+		return PracticeFeedback{}, err
+	}
+	return s.repository.CheckPracticeAnswer(ctx, questionID, cleaned)
+}
+
+func (s *Service) GetAttemptReview(ctx context.Context, userID, attemptID string) (AttemptReview, error) {
+	return s.repository.GetAttemptReview(ctx, userID, attemptID)
 }
 
 type Service struct{ repository Repository }
@@ -52,17 +88,25 @@ func (s *Service) GetAttempt(ctx context.Context, userID, attemptID string) (Att
 }
 
 func (s *Service) SaveAnswer(ctx context.Context, userID, attemptID, questionID string, values []string) (SavedAnswer, error) {
+	cleaned, err := cleanAnswers(values)
+	if err != nil {
+		return SavedAnswer{}, err
+	}
+	return s.repository.SaveAnswer(ctx, userID, attemptID, questionID, cleaned)
+}
+
+func cleanAnswers(values []string) ([]string, error) {
 	if len(values) == 0 || len(values) > 10 {
-		return SavedAnswer{}, ErrInvalidAnswer
+		return nil, ErrInvalidAnswer
 	}
 	cleaned := make([]string, len(values))
 	for i, value := range values {
 		cleaned[i] = strings.TrimSpace(value)
 		if cleaned[i] == "" || len(cleaned[i]) > 500 {
-			return SavedAnswer{}, ErrInvalidAnswer
+			return nil, ErrInvalidAnswer
 		}
 	}
-	return s.repository.SaveAnswer(ctx, userID, attemptID, questionID, cleaned)
+	return cleaned, nil
 }
 
 func (s *Service) SubmitAttempt(ctx context.Context, userID, attemptID string) (Attempt, error) {

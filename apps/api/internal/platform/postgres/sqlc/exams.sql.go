@@ -11,6 +11,54 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getPracticeAnswerKey = `-- name: GetPracticeAnswerKey :many
+SELECT q.id, q.type, q.explanation, aa.value, aa.is_case_sensitive
+FROM questions q
+JOIN exam_sections es ON es.id = q.section_id
+JOIN exam_versions ev ON ev.id = es.exam_version_id
+JOIN exams e ON e.id = ev.exam_id
+JOIN accepted_answers aa ON aa.question_id = q.id
+WHERE q.id = $1
+  AND ev.status = 'published'
+  AND ev.purpose = 'practice'
+  AND e.archived_at IS NULL
+ORDER BY aa.position
+`
+
+type GetPracticeAnswerKeyRow struct {
+	ID              pgtype.UUID  `json:"id"`
+	Type            QuestionType `json:"type"`
+	Explanation     string       `json:"explanation"`
+	Value           string       `json:"value"`
+	IsCaseSensitive bool         `json:"is_case_sensitive"`
+}
+
+func (q *Queries) GetPracticeAnswerKey(ctx context.Context, id pgtype.UUID) ([]GetPracticeAnswerKeyRow, error) {
+	rows, err := q.db.Query(ctx, getPracticeAnswerKey, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetPracticeAnswerKeyRow{}
+	for rows.Next() {
+		var i GetPracticeAnswerKeyRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Explanation,
+			&i.Value,
+			&i.IsCaseSensitive,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPublishedExam = `-- name: GetPublishedExam :one
 SELECT
     e.id,
@@ -27,6 +75,7 @@ FROM exams e
 JOIN exam_versions ev ON ev.exam_id = e.id
 WHERE e.id = $1
   AND ev.status = 'published'
+  AND ev.purpose = 'mock'
   AND e.archived_at IS NULL
 `
 
@@ -106,6 +155,90 @@ func (q *Queries) ListExamSections(ctx context.Context, examVersionID pgtype.UUI
 	return items, nil
 }
 
+const listPracticeQuestions = `-- name: ListPracticeQuestions :many
+SELECT
+    q.id,
+    q.position,
+    q.type,
+    q.prompt,
+    q.points,
+    q.config,
+    es.id AS section_id,
+    es.title AS section_title,
+    es.instructions AS section_instructions,
+    es.audio_url,
+    es.passage,
+    ev.title AS exam_title,
+    ev.skill
+FROM questions q
+JOIN exam_sections es ON es.id = q.section_id
+JOIN exam_versions ev ON ev.id = es.exam_version_id
+JOIN exams e ON e.id = ev.exam_id
+WHERE ev.status = 'published'
+  AND ev.purpose = 'practice'
+  AND e.archived_at IS NULL
+  AND ($1::text = '' OR ev.skill::text = $1::text)
+  AND ($2::text = '' OR q.type::text = $2::text)
+ORDER BY ev.published_at DESC, es.position, q.position
+LIMIT $3
+`
+
+type ListPracticeQuestionsParams struct {
+	Skill        string `json:"skill"`
+	QuestionType string `json:"question_type"`
+	ResultLimit  int32  `json:"result_limit"`
+}
+
+type ListPracticeQuestionsRow struct {
+	ID                  pgtype.UUID    `json:"id"`
+	Position            int32          `json:"position"`
+	Type                QuestionType   `json:"type"`
+	Prompt              string         `json:"prompt"`
+	Points              pgtype.Numeric `json:"points"`
+	Config              []byte         `json:"config"`
+	SectionID           pgtype.UUID    `json:"section_id"`
+	SectionTitle        string         `json:"section_title"`
+	SectionInstructions string         `json:"section_instructions"`
+	AudioUrl            pgtype.Text    `json:"audio_url"`
+	Passage             pgtype.Text    `json:"passage"`
+	ExamTitle           string         `json:"exam_title"`
+	Skill               ExamSkill      `json:"skill"`
+}
+
+func (q *Queries) ListPracticeQuestions(ctx context.Context, arg ListPracticeQuestionsParams) ([]ListPracticeQuestionsRow, error) {
+	rows, err := q.db.Query(ctx, listPracticeQuestions, arg.Skill, arg.QuestionType, arg.ResultLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPracticeQuestionsRow{}
+	for rows.Next() {
+		var i ListPracticeQuestionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Position,
+			&i.Type,
+			&i.Prompt,
+			&i.Points,
+			&i.Config,
+			&i.SectionID,
+			&i.SectionTitle,
+			&i.SectionInstructions,
+			&i.AudioUrl,
+			&i.Passage,
+			&i.ExamTitle,
+			&i.Skill,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublishedExams = `-- name: ListPublishedExams :many
 SELECT
     e.id,
@@ -123,6 +256,7 @@ JOIN exam_versions ev ON ev.exam_id = e.id
 JOIN exam_sections es ON es.exam_version_id = ev.id
 JOIN questions q ON q.section_id = es.id
 WHERE ev.status = 'published'
+  AND ev.purpose = 'mock'
   AND e.archived_at IS NULL
 GROUP BY e.id, ev.id
 ORDER BY ev.published_at DESC

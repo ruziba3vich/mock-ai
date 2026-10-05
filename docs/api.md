@@ -28,6 +28,15 @@ Google login automatically links to an existing account when Google returns the 
 | `POST` | `/api/v1/attempts/{attempt_id}/submit` | Lock and score an attempt transactionally |
 | `GET` | `/api/v1/me/attempts` | Return paginated attempt history |
 | `GET` | `/api/v1/me/progress` | Aggregate score, band, and accuracy statistics per skill |
+| `GET` | `/api/v1/attempts/{attempt_id}/review` | Return owned scored answers, accepted answers, and explanations |
+
+## Focused practice
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/practice/questions?skill=reading&type=multiple_choice&limit=5` | Build an untimed set from dedicated practice content |
+| `POST` | `/api/v1/practice/questions/{question_id}/check` | Check one practice answer and reveal its accepted answer and explanation |
+
+Practice checks accept the same `{"values":["answer"]}` shape as mock answers. Practice content is separated from scored mock content at the database level, so checking an answer cannot expose a mock-exam answer key. Practice checks are formative and do not affect band history.
 
 Answer saves accept `{"values":["answer"]}`. Multiple-select questions use more than one value. Each successful overwrite increments the saved answer revision.
-

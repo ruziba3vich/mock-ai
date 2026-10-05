@@ -10,7 +10,7 @@ SELECT
 FROM exam_versions ev
 JOIN exam_sections es ON es.exam_version_id = ev.id
 JOIN questions q ON q.section_id = es.id
-WHERE ev.id = $2 AND ev.status = 'published'
+WHERE ev.id = $2 AND ev.status = 'published' AND ev.purpose = 'mock'
 GROUP BY ev.id
 RETURNING *;
 
@@ -127,3 +127,30 @@ JOIN exam_versions ev ON ev.id = a.exam_version_id
 WHERE a.user_id = $1 AND a.status = 'scored'
 GROUP BY ev.skill
 ORDER BY ev.skill;
+
+-- name: GetAttemptReview :many
+SELECT
+    a.id AS attempt_id,
+    ev.title AS exam_title,
+    ev.skill,
+    a.band_score,
+    es.title AS section_title,
+    es.position AS section_position,
+    q.id AS question_id,
+    q.position AS question_position,
+    q.type AS question_type,
+    q.prompt,
+    q.explanation,
+    ans.answer,
+    ans.is_correct,
+    aa.value AS accepted_value
+FROM attempts a
+JOIN exam_versions ev ON ev.id = a.exam_version_id
+JOIN exam_sections es ON es.exam_version_id = ev.id
+JOIN questions q ON q.section_id = es.id
+JOIN accepted_answers aa ON aa.question_id = q.id
+LEFT JOIN attempt_answers ans ON ans.attempt_id = a.id AND ans.question_id = q.id
+WHERE a.id = $1
+  AND a.user_id = $2
+  AND a.status = 'scored'
+ORDER BY es.position, q.position, aa.position;

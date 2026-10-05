@@ -308,6 +308,101 @@ func (r *Repository) GetProgress(ctx context.Context, userID string) ([]applicat
 	return progress, nil
 }
 
+func (r *Repository) ListPracticeQuestions(ctx context.Context, skill, questionType string, limit int32) ([]application.PracticeQuestion, error) {
+	rows, err := r.queries.ListPracticeQuestions(ctx, db.ListPracticeQuestionsParams{
+		Skill: skill, QuestionType: questionType, ResultLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list practice questions: %w", err)
+	}
+	questions := make([]application.PracticeQuestion, 0, len(rows))
+	for _, row := range rows {
+		optionRows, err := r.queries.ListQuestionOptions(ctx, row.ID)
+		if err != nil {
+			return nil, fmt.Errorf("list practice question options: %w", err)
+		}
+		options := make([]application.Option, len(optionRows))
+		for i, option := range optionRows {
+			options[i] = application.Option{ID: uuidString(option.ID), Position: option.Position, Label: option.Label, Value: option.Value}
+		}
+		questions = append(questions, application.PracticeQuestion{
+			ID: uuidString(row.ID), Position: row.Position, Type: string(row.Type), Prompt: row.Prompt,
+			Points: numericFloat(row.Points), Config: row.Config, Options: options,
+			SectionTitle: row.SectionTitle, SectionInstructions: row.SectionInstructions,
+			AudioURL: textString(row.AudioUrl), Passage: textString(row.Passage),
+			ExamTitle: row.ExamTitle, Skill: string(row.Skill),
+		})
+	}
+	return questions, nil
+}
+
+func (r *Repository) CheckPracticeAnswer(ctx context.Context, questionID string, values []string) (application.PracticeFeedback, error) {
+	id, err := parseUUID(questionID)
+	if err != nil {
+		return application.PracticeFeedback{}, application.ErrNotFound
+	}
+	rows, err := r.queries.GetPracticeAnswerKey(ctx, id)
+	if err != nil {
+		return application.PracticeFeedback{}, fmt.Errorf("get practice answer key: %w", err)
+	}
+	if len(rows) == 0 {
+		return application.PracticeFeedback{}, application.ErrNotFound
+	}
+	accepted := make([]acceptedAnswer, len(rows))
+	answerValues := make([]string, len(rows))
+	for i, row := range rows {
+		accepted[i] = acceptedAnswer{value: row.Value, caseSensitive: row.IsCaseSensitive}
+		answerValues[i] = row.Value
+	}
+	return application.PracticeFeedback{
+		QuestionID:     questionID,
+		Correct:        answerCorrect(rows[0].Type, values, accepted),
+		AcceptedAnswer: answerValues,
+		Explanation:    rows[0].Explanation,
+	}, nil
+}
+
+func (r *Repository) GetAttemptReview(ctx context.Context, userID, attemptID string) (application.AttemptReview, error) {
+	params, err := attemptParams(userID, attemptID)
+	if err != nil {
+		return application.AttemptReview{}, application.ErrNotFound
+	}
+	rows, err := r.queries.GetAttemptReview(ctx, db.GetAttemptReviewParams{ID: params.ID, UserID: params.UserID})
+	if err != nil {
+		return application.AttemptReview{}, fmt.Errorf("get attempt review: %w", err)
+	}
+	if len(rows) == 0 {
+		return application.AttemptReview{}, application.ErrNotFound
+	}
+	review := application.AttemptReview{
+		AttemptID: attemptID, ExamTitle: rows[0].ExamTitle, Skill: string(rows[0].Skill),
+		BandScore: numericFloat(rows[0].BandScore), Questions: make([]application.ReviewQuestion, 0),
+	}
+	byQuestion := make(map[string]int)
+	for _, row := range rows {
+		key := uuidString(row.QuestionID)
+		index, exists := byQuestion[key]
+		if !exists {
+			var submitted struct {
+				Values []string `json:"values"`
+			}
+			if len(row.Answer) > 0 {
+				_ = json.Unmarshal(row.Answer, &submitted)
+			}
+			index = len(review.Questions)
+			byQuestion[key] = index
+			review.Questions = append(review.Questions, application.ReviewQuestion{
+				ID: key, Position: row.QuestionPosition, SectionTitle: row.SectionTitle,
+				Type: string(row.QuestionType), Prompt: row.Prompt, SubmittedAnswer: submitted.Values,
+				AcceptedAnswer: []string{}, Correct: row.IsCorrect.Valid && row.IsCorrect.Bool,
+				Explanation: row.Explanation,
+			})
+		}
+		review.Questions[index].AcceptedAnswer = append(review.Questions[index].AcceptedAnswer, row.AcceptedValue)
+	}
+	return review, nil
+}
+
 type scoreQuestion struct {
 	id           pgtype.UUID
 	questionType db.QuestionType

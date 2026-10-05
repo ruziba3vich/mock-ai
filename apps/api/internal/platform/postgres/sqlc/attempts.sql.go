@@ -65,7 +65,7 @@ SELECT
 FROM exam_versions ev
 JOIN exam_sections es ON es.exam_version_id = ev.id
 JOIN questions q ON q.section_id = es.id
-WHERE ev.id = $2 AND ev.status = 'published'
+WHERE ev.id = $2 AND ev.status = 'published' AND ev.purpose = 'mock'
 GROUP BY ev.id
 RETURNING id, user_id, exam_version_id, status, started_at, deadline_at, submitted_at, scored_at, raw_score, band_score, question_count
 `
@@ -200,6 +200,91 @@ func (q *Queries) GetAttemptForUpdate(ctx context.Context, arg GetAttemptForUpda
 		&i.QuestionCount,
 	)
 	return i, err
+}
+
+const getAttemptReview = `-- name: GetAttemptReview :many
+SELECT
+    a.id AS attempt_id,
+    ev.title AS exam_title,
+    ev.skill,
+    a.band_score,
+    es.title AS section_title,
+    es.position AS section_position,
+    q.id AS question_id,
+    q.position AS question_position,
+    q.type AS question_type,
+    q.prompt,
+    q.explanation,
+    ans.answer,
+    ans.is_correct,
+    aa.value AS accepted_value
+FROM attempts a
+JOIN exam_versions ev ON ev.id = a.exam_version_id
+JOIN exam_sections es ON es.exam_version_id = ev.id
+JOIN questions q ON q.section_id = es.id
+JOIN accepted_answers aa ON aa.question_id = q.id
+LEFT JOIN attempt_answers ans ON ans.attempt_id = a.id AND ans.question_id = q.id
+WHERE a.id = $1
+  AND a.user_id = $2
+  AND a.status = 'scored'
+ORDER BY es.position, q.position, aa.position
+`
+
+type GetAttemptReviewParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+type GetAttemptReviewRow struct {
+	AttemptID        pgtype.UUID    `json:"attempt_id"`
+	ExamTitle        string         `json:"exam_title"`
+	Skill            ExamSkill      `json:"skill"`
+	BandScore        pgtype.Numeric `json:"band_score"`
+	SectionTitle     string         `json:"section_title"`
+	SectionPosition  int32          `json:"section_position"`
+	QuestionID       pgtype.UUID    `json:"question_id"`
+	QuestionPosition int32          `json:"question_position"`
+	QuestionType     QuestionType   `json:"question_type"`
+	Prompt           string         `json:"prompt"`
+	Explanation      string         `json:"explanation"`
+	Answer           []byte         `json:"answer"`
+	IsCorrect        pgtype.Bool    `json:"is_correct"`
+	AcceptedValue    string         `json:"accepted_value"`
+}
+
+func (q *Queries) GetAttemptReview(ctx context.Context, arg GetAttemptReviewParams) ([]GetAttemptReviewRow, error) {
+	rows, err := q.db.Query(ctx, getAttemptReview, arg.ID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetAttemptReviewRow{}
+	for rows.Next() {
+		var i GetAttemptReviewRow
+		if err := rows.Scan(
+			&i.AttemptID,
+			&i.ExamTitle,
+			&i.Skill,
+			&i.BandScore,
+			&i.SectionTitle,
+			&i.SectionPosition,
+			&i.QuestionID,
+			&i.QuestionPosition,
+			&i.QuestionType,
+			&i.Prompt,
+			&i.Explanation,
+			&i.Answer,
+			&i.IsCorrect,
+			&i.AcceptedValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getBandForRawScore = `-- name: GetBandForRawScore :one

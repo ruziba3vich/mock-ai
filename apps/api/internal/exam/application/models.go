@@ -89,3 +89,48 @@ type SkillProgress struct {
 	CorrectAnswers    float64 `json:"correct_answers"`
 	TotalQuestions    int32   `json:"total_questions"`
 }
+
+// PracticeQuestion is a published question with the source material needed to
+// answer it. Answer keys are deliberately returned only after an answer check.
+type PracticeQuestion struct {
+	ID                  string          `json:"id"`
+	Position            int32           `json:"position"`
+	Type                string          `json:"type"`
+	Prompt              string          `json:"prompt"`
+	Points              float64         `json:"points"`
+	Config              json.RawMessage `json:"config"`
+	Options             []Option        `json:"options"`
+	SectionTitle        string          `json:"section_title"`
+	SectionInstructions string          `json:"section_instructions"`
+	AudioURL            string          `json:"audio_url,omitempty"`
+	Passage             string          `json:"passage,omitempty"`
+	ExamTitle           string          `json:"exam_title"`
+	Skill               string          `json:"skill"`
+}
+
+type PracticeFeedback struct {
+	QuestionID     string   `json:"question_id"`
+	Correct        bool     `json:"correct"`
+	AcceptedAnswer []string `json:"accepted_answers"`
+	Explanation    string   `json:"explanation"`
+}
+
+type AttemptReview struct {
+	AttemptID string           `json:"attempt_id"`
+	ExamTitle string           `json:"exam_title"`
+	Skill     string           `json:"skill"`
+	BandScore float64          `json:"band_score"`
+	Questions []ReviewQuestion `json:"questions"`
+}
+
+type ReviewQuestion struct {
+	ID              string   `json:"id"`
+	Position        int32    `json:"position"`
+	SectionTitle    string   `json:"section_title"`
+	Type            string   `json:"type"`
+	Prompt          string   `json:"prompt"`
+	SubmittedAnswer []string `json:"submitted_answers"`
+	AcceptedAnswer  []string `json:"accepted_answers"`
+	Correct         bool     `json:"correct"`
+	Explanation     string   `json:"explanation"`
+}

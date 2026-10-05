@@ -15,6 +15,7 @@ JOIN exam_versions ev ON ev.exam_id = e.id
 JOIN exam_sections es ON es.exam_version_id = ev.id
 JOIN questions q ON q.section_id = es.id
 WHERE ev.status = 'published'
+  AND ev.purpose = 'mock'
   AND e.archived_at IS NULL
 GROUP BY e.id, ev.id
 ORDER BY ev.published_at DESC;
@@ -35,6 +36,7 @@ FROM exams e
 JOIN exam_versions ev ON ev.exam_id = e.id
 WHERE e.id = $1
   AND ev.status = 'published'
+  AND ev.purpose = 'mock'
   AND e.archived_at IS NULL;
 
 -- name: ListExamSections :many
@@ -54,3 +56,43 @@ SELECT id, question_id, position, label, value
 FROM question_options
 WHERE question_id = $1
 ORDER BY position;
+
+-- name: ListPracticeQuestions :many
+SELECT
+    q.id,
+    q.position,
+    q.type,
+    q.prompt,
+    q.points,
+    q.config,
+    es.id AS section_id,
+    es.title AS section_title,
+    es.instructions AS section_instructions,
+    es.audio_url,
+    es.passage,
+    ev.title AS exam_title,
+    ev.skill
+FROM questions q
+JOIN exam_sections es ON es.id = q.section_id
+JOIN exam_versions ev ON ev.id = es.exam_version_id
+JOIN exams e ON e.id = ev.exam_id
+WHERE ev.status = 'published'
+  AND ev.purpose = 'practice'
+  AND e.archived_at IS NULL
+  AND (sqlc.arg(skill)::text = '' OR ev.skill::text = sqlc.arg(skill)::text)
+  AND (sqlc.arg(question_type)::text = '' OR q.type::text = sqlc.arg(question_type)::text)
+ORDER BY ev.published_at DESC, es.position, q.position
+LIMIT sqlc.arg(result_limit);
+
+-- name: GetPracticeAnswerKey :many
+SELECT q.id, q.type, q.explanation, aa.value, aa.is_case_sensitive
+FROM questions q
+JOIN exam_sections es ON es.id = q.section_id
+JOIN exam_versions ev ON ev.id = es.exam_version_id
+JOIN exams e ON e.id = ev.exam_id
+JOIN accepted_answers aa ON aa.question_id = q.id
+WHERE q.id = $1
+  AND ev.status = 'published'
+  AND ev.purpose = 'practice'
+  AND e.archived_at IS NULL
+ORDER BY aa.position;

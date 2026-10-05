@@ -30,10 +30,51 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	handle("GET /api/v1/exams/{exam_id}", h.getExam)
 	handle("POST /api/v1/exams/{exam_id}/attempts", h.startAttempt)
 	handle("GET /api/v1/attempts/{attempt_id}", h.getAttempt)
+	handle("GET /api/v1/attempts/{attempt_id}/review", h.getAttemptReview)
 	handle("PUT /api/v1/attempts/{attempt_id}/answers/{question_id}", h.saveAnswer)
 	handle("POST /api/v1/attempts/{attempt_id}/submit", h.submitAttempt)
 	handle("GET /api/v1/me/attempts", h.history)
 	handle("GET /api/v1/me/progress", h.progress)
+	handle("GET /api/v1/practice/questions", h.listPracticeQuestions)
+	handle("POST /api/v1/practice/questions/{question_id}/check", h.checkPracticeAnswer)
+}
+
+func (h *Handler) listPracticeQuestions(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 32)
+	questions, err := h.service.ListPracticeQuestions(
+		r.Context(), r.URL.Query().Get("skill"), r.URL.Query().Get("type"), int32(limit),
+	)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"questions": questions})
+}
+
+func (h *Handler) checkPracticeAnswer(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Values []string `json:"values"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	feedback, err := h.service.CheckPracticeAnswer(r.Context(), r.PathValue("question_id"), input.Values)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+}
+
+func (h *Handler) getAttemptReview(w http.ResponseWriter, r *http.Request) {
+	user, _ := identityhttp.UserFromContext(r.Context())
+	review, err := h.service.GetAttemptReview(r.Context(), user.ID, r.PathValue("attempt_id"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"review": review})
 }
 
 func (h *Handler) progress(w http.ResponseWriter, r *http.Request) {

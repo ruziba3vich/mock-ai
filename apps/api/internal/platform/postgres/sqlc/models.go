@@ -56,6 +56,48 @@ func (ns NullAttemptStatus) Value() (driver.Value, error) {
 	return string(ns.AttemptStatus), nil
 }
 
+type ExamPurpose string
+
+const (
+	ExamPurposeMock     ExamPurpose = "mock"
+	ExamPurposePractice ExamPurpose = "practice"
+)
+
+func (e *ExamPurpose) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ExamPurpose(s)
+	case string:
+		*e = ExamPurpose(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ExamPurpose: %T", src)
+	}
+	return nil
+}
+
+type NullExamPurpose struct {
+	ExamPurpose ExamPurpose `json:"exam_purpose"`
+	Valid       bool        `json:"valid"` // Valid is true if ExamPurpose is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullExamPurpose) Scan(value interface{}) error {
+	if value == nil {
+		ns.ExamPurpose, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ExamPurpose.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullExamPurpose) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ExamPurpose), nil
+}
+
 type ExamSkill string
 
 const (
@@ -353,6 +395,7 @@ type ExamVersion struct {
 	Instructions    string             `json:"instructions"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	Purpose         ExamPurpose        `json:"purpose"`
 }
 
 type PasswordCredential struct {
