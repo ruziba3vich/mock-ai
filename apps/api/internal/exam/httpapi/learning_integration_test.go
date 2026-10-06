@@ -172,7 +172,7 @@ func TestLearningIntegration(t *testing.T) {
 	}
 	request("PUT", "/api/v1/me/reminder", app.Reminder{Enabled: false, LocalTime: "00:00", Timezone: "UTC"}, cookie, 204)
 	t.Log("ownership, notebook resolution, annotations, admin publishing/versioning, reminder validation and single daily claim passed")
-	if e = migration.Steps(-2); e != nil {
+	if e = migration.Steps(-3); e != nil {
 		t.Fatal("rollback new migrations:", e)
 	}
 	if e = migration.Up(); e != nil {
