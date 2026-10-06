@@ -408,6 +408,23 @@ type AcceptedAnswer struct {
 	Position        int32       `json:"position"`
 }
 
+type Admin struct {
+	ID            pgtype.UUID        `json:"id"`
+	Email         string             `json:"email"`
+	DisplayName   string             `json:"display_name"`
+	PasswordHash  string             `json:"password_hash"`
+	Disabled      bool               `json:"disabled"`
+	LoginWindow   pgtype.Timestamptz `json:"login_window"`
+	LoginAttempts int32              `json:"login_attempts"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type AdminSession struct {
+	TokenHash string             `json:"token_hash"`
+	AdminID   pgtype.UUID        `json:"admin_id"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
 type Attempt struct {
 	ID            pgtype.UUID        `json:"id"`
 	UserID        pgtype.UUID        `json:"user_id"`
@@ -481,19 +498,21 @@ type CommunityWeeklyScore struct {
 }
 
 type ContentDraft struct {
-	ID        pgtype.UUID        `json:"id"`
-	ExamID    pgtype.UUID        `json:"exam_id"`
-	AuthorID  pgtype.UUID        `json:"author_id"`
-	Data      []byte             `json:"data"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID            pgtype.UUID        `json:"id"`
+	ExamID        pgtype.UUID        `json:"exam_id"`
+	AuthorID      pgtype.UUID        `json:"author_id"`
+	Data          []byte             `json:"data"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	AdminAuthorID pgtype.UUID        `json:"admin_author_id"`
 }
 
 type Exam struct {
-	ID         pgtype.UUID        `json:"id"`
-	Slug       string             `json:"slug"`
-	CreatedBy  pgtype.UUID        `json:"created_by"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	ID             pgtype.UUID        `json:"id"`
+	Slug           string             `json:"slug"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ArchivedAt     pgtype.Timestamptz `json:"archived_at"`
+	CreatedByAdmin pgtype.UUID        `json:"created_by_admin"`
 }
 
 type ExamSection struct {

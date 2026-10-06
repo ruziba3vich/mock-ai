@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	adminhttp "github.com/own/mock-ai/apps/api/internal/admin/httpapi"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,10 +17,15 @@ type Handler struct {
 	service *application.Service
 	auth    *identityhttp.Handler
 	logger  *slog.Logger
+	admins  *adminhttp.Handler
 }
 
-func New(service *application.Service, auth *identityhttp.Handler, logger *slog.Logger) *Handler {
-	return &Handler{service: service, auth: auth, logger: logger}
+func New(service *application.Service, auth *identityhttp.Handler, logger *slog.Logger, admins ...*adminhttp.Handler) *Handler {
+	h := &Handler{service: service, auth: auth, logger: logger}
+	if len(admins) > 0 {
+		h.admins = admins[0]
+	}
+	return h
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {

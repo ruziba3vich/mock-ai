@@ -50,8 +50,8 @@ Practice checks accept the same `{"values":["answer"]}` shape as mock answers. P
 | GET | `/api/v1/me/mistakes` | Latest 200 distinct missed questions from practice and scored mocks, with retry resolution state |
 | POST | `/api/v1/me/mistakes/{question_id}/retry` | Check `{"values":["answer"]}` for a question previously missed by this student |
 | GET / PUT | `/api/v1/me/reminder` | Read/update opt-in Telegram reminder preferences: enabled, local_time (`HH:MM`), timezone (IANA name) |
-| GET / POST | `/api/v1/admin/content` | List drafts/create draft (admin role required) |
-| PUT | `/api/v1/admin/content/{draft_id}` | Save edits to a draft (admin role required) |
+| GET / POST | `/api/v1/admin/content` | List drafts/create draft (separate admin session required) |
+| PUT | `/api/v1/admin/content/{draft_id}` | Save edits to a draft (separate admin session required) |
 | POST | `/api/v1/admin/content/{draft_id}/publish` | Validate and publish an immutable version; archive the prior published version |
 
 Reminders default to disabled. The bot checks every minute, claims at most one delivery per local day, and links to `/#plan`. Claims prevent duplicate delivery across workers. Delivery is best effort: a transport failure after claiming can skip that day's reminder. No reminder is sent without opt-in and a linked Telegram identity.
@@ -95,3 +95,23 @@ frontend challenges. Lifetime distinct questions, answered mock versions and
 study days power achievements. Vocabulary warm-ups are local, unranked rounds.
 Migration 000008 creates the opt-in table and aggregate views; rollback only
 removes these community objects, preserving the underlying study records.
+# Separate administrator identity
+
+Admins are not students and are never created by assigning a student role.
+`admins` stores their credentials; `admin_sessions` stores SHA-256 session-token
+hashes. Legacy student roles grant no admin permissions. Admin email addresses
+are unique within the admin realm; using the same email as a student does not
+link the accounts or share credentials.
+
+- `POST /api/v1/admin/auth/login`: `{ "email": "...", "password": "..." }`;
+  returns `{ "admin": { "id", "email", "display_name" } }` and a separate
+  HttpOnly, SameSite=Strict cookie scoped to `/api/v1/admin` (Secure in production).
+- `GET /api/v1/admin/me`: current administrator, or 401.
+- `POST /api/v1/admin/auth/logout`: revokes the current admin session, returns 204.
+
+All admin writes, including login/logout, require an Origin matching
+`ADMIN_ORIGIN`. Sessions expire after eight hours; disabled admins cannot use
+existing sessions. Five failed login attempts lock an account for the remainder
+of its 15-minute login window. There is no public administrator registration.
+New drafts use `admin_author_id`; new exams use `created_by_admin`. Historical
+system/student author references are retained solely as legacy metadata.

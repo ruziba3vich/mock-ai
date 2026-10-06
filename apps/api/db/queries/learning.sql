@@ -69,7 +69,7 @@ UPDATE study_reminders SET enabled = false WHERE user_id = $1;
 SELECT id, exam_id, data, updated_at FROM content_drafts ORDER BY updated_at DESC LIMIT 100;
 
 -- name: CreateContentDraft :one
-INSERT INTO content_drafts(author_id, data) VALUES ($1,$2) RETURNING id;
+INSERT INTO content_drafts(admin_author_id, data) VALUES ($1,$2) RETURNING id;
 
 -- name: UpdateContentDraft :one
 UPDATE content_drafts SET data = $2, updated_at = now() WHERE id = $1 RETURNING id;
@@ -81,7 +81,7 @@ SELECT * FROM content_drafts WHERE id = $1 FOR UPDATE;
 UPDATE content_drafts SET exam_id = $2 WHERE id = $1;
 
 -- name: CreateContentExam :one
-INSERT INTO exams(slug,created_by) VALUES ($1,$2) RETURNING id;
+INSERT INTO exams(slug,created_by_admin) VALUES ($1,$2) RETURNING id;
 
 -- name: ArchiveContentVersions :exec
 UPDATE exam_versions SET status = 'archived' WHERE exam_id = $1 AND status = 'published';

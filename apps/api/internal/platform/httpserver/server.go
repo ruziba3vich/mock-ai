@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"encoding/json"
+	adminhttp "github.com/own/mock-ai/apps/api/internal/admin/httpapi"
 	"log/slog"
 	"net/http"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"github.com/own/mock-ai/apps/api/internal/identity/httpapi"
 )
 
-func New(logger *slog.Logger, webOrigin string, auth *httpapi.Handler, exams *examhttp.Handler) http.Handler {
+func New(logger *slog.Logger, webOrigin string, auth *httpapi.Handler, exams *examhttp.Handler, admins ...*adminhttp.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -22,6 +23,9 @@ func New(logger *slog.Logger, webOrigin string, auth *httpapi.Handler, exams *ex
 		})
 	})
 	auth.RegisterRoutes(mux)
+	for _, a := range admins {
+		a.RegisterRoutes(mux)
+	}
 	exams.RegisterRoutes(mux)
 
 	return recoverer(logger, requestLogger(logger, cors(webOrigin, mux)))

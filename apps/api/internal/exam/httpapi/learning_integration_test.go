@@ -19,6 +19,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	migrations "github.com/own/mock-ai/apps/api/db/migrations"
+	adminapp "github.com/own/mock-ai/apps/api/internal/admin/application"
+	adminhttp "github.com/own/mock-ai/apps/api/internal/admin/httpapi"
+	adminpg "github.com/own/mock-ai/apps/api/internal/admin/postgres"
 	app "github.com/own/mock-ai/apps/api/internal/exam/application"
 	examhttp "github.com/own/mock-ai/apps/api/internal/exam/httpapi"
 	exampg "github.com/own/mock-ai/apps/api/internal/exam/postgres"
@@ -66,11 +69,14 @@ func TestLearningIntegration(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	authHandler := authhttp.New(auth, googleauth.New("", "", "", ""), logger, "http://localhost", false)
-	handler := httpserver.New(logger, "http://localhost", authHandler, examhttp.New(service, authHandler, logger))
+	adminService := adminapp.New(adminpg.New(pool))
+	adminHandler := adminhttp.New(adminService, "http://localhost", false)
+	handler := httpserver.New(logger, "http://localhost", authHandler, examhttp.New(service, authHandler, logger, adminHandler), adminHandler)
 	request := func(method, path string, payload any, cookie *http.Cookie, status int) map[string]json.RawMessage {
 		t.Helper()
 		b, _ := json.Marshal(payload)
 		req := httptest.NewRequest(method, path, bytes.NewReader(b))
+		req.Header.Set("Origin", "http://localhost")
 		if cookie != nil {
 			req.AddCookie(cookie)
 		}
@@ -98,7 +104,7 @@ func TestLearningIntegration(t *testing.T) {
 	cookie := &http.Cookie{Name: "mock_ai_session", Value: session.Token}
 	other := &http.Cookie{Name: "mock_ai_session", Value: otherSession.Token}
 	request("GET", "/api/v1/me/mistakes", nil, nil, 401)
-	request("GET", "/api/v1/admin/content", nil, cookie, 403)
+	request("GET", "/api/v1/admin/content", nil, cookie, 401)
 	exams, e := service.ListExams(context.Background())
 	if e != nil || len(exams) == 0 {
 		t.Fatal("missing exams", e)
@@ -180,18 +186,69 @@ func TestLearningIntegration(t *testing.T) {
 	if e = queries.AssignUserRole(context.Background(), db.AssignUserRoleParams{UserID: uid, Role: db.UserRoleAdmin}); e != nil {
 		t.Fatal(e)
 	}
+	// A legacy student admin role must never unlock the separate admin realm.
+	request("GET", "/api/v1/admin/content", nil, cookie, 401)
+	request("GET", "/api/v1/admin/me", nil, cookie, 401)
+	adminID, e := adminService.Create(context.Background(), "editor@example.com", "Editor", "separate-admin-password")
+	if e != nil {
+		t.Fatal(e)
+	}
+	request("POST", "/api/v1/admin/auth/login", map[string]string{"email": "learning@example.com", "password": "long-test-password"}, nil, 401)
+	loginBody := `{"email":"editor@example.com","password":"separate-admin-password"}`
+	login := httptest.NewRequest("POST", "/api/v1/admin/auth/login", strings.NewReader(loginBody))
+	login.Header.Set("Origin", "https://untrusted.example")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, login)
+	if response.Code != 403 {
+		t.Fatal("cross-origin login accepted")
+	}
+	login = httptest.NewRequest("POST", "/api/v1/admin/auth/login", strings.NewReader(loginBody))
+	login.Header.Set("Origin", "http://localhost")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, login)
+	if response.Code != 200 {
+		t.Fatal("admin login failed", response.Body.String())
+	}
+	adminCookie := response.Result().Cookies()[0]
+	if adminCookie.Name != adminhttp.CookieName || !adminCookie.HttpOnly || adminCookie.Path != "/api/v1/admin" || adminCookie.SameSite != http.SameSiteStrictMode {
+		t.Fatal("unsafe admin cookie")
+	}
+	request("GET", "/api/v1/me", nil, adminCookie, 401)
+	request("GET", "/api/v1/admin/me", nil, adminCookie, 200)
+	var studentCount int
+	if e = pool.QueryRow(context.Background(), "SELECT count(*) FROM users WHERE email='editor@example.com'").Scan(&studentCount); e != nil || studentCount != 0 {
+		t.Fatal("admin must not create a student", e)
+	}
 	content := app.Content{Title: "Integration reading", Skill: "reading", Purpose: "practice", Duration: 600, Sections: []app.ContentSection{{Title: "Passage", Passage: "The library opens at nine.", Questions: []app.ContentQuestion{{Type: "short_answer", Prompt: "When does it open?", Answers: []string{"nine"}, Explanation: "The opening time is stated in the passage."}}}}}
-	result := request("POST", "/api/v1/admin/content", content, cookie, 200)
+	result := request("POST", "/api/v1/admin/content", content, adminCookie, 200)
 	var draftID string
 	json.Unmarshal(result["id"], &draftID)
-	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, other, 403)
-	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, cookie, 200)
+	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, other, 401)
+	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, adminCookie, 200)
 	content.Sections[0].Questions[0].Explanation = "An improved explanation."
-	request("PUT", "/api/v1/admin/content/"+draftID, content, cookie, 200)
-	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, cookie, 200)
+	request("PUT", "/api/v1/admin/content/"+draftID, content, adminCookie, 200)
+	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, adminCookie, 200)
 	content.Skill = "listening"
-	request("PUT", "/api/v1/admin/content/"+draftID, content, cookie, 200)
-	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, cookie, 422)
+	request("PUT", "/api/v1/admin/content/"+draftID, content, adminCookie, 200)
+	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, adminCookie, 422)
+	var author string
+	if e = pool.QueryRow(context.Background(), "SELECT admin_author_id::text FROM content_drafts WHERE id=$1", draftID).Scan(&author); e != nil || author != adminID {
+		t.Fatal("wrong admin content author", e)
+	}
+	if _, e = pool.Exec(context.Background(), "UPDATE admins SET disabled=true WHERE id=$1", adminID); e != nil {
+		t.Fatal(e)
+	}
+	request("GET", "/api/v1/admin/content", nil, adminCookie, 401)
+	if _, e = pool.Exec(context.Background(), "UPDATE admins SET disabled=false WHERE id=$1", adminID); e != nil {
+		t.Fatal(e)
+	}
+	request("POST", "/api/v1/admin/auth/logout", nil, adminCookie, 204)
+	request("GET", "/api/v1/admin/content", nil, adminCookie, 401)
+	for i := 0; i < 5; i++ {
+		request("POST", "/api/v1/admin/auth/login", map[string]string{"email": "editor@example.com", "password": "wrong"}, nil, 401)
+	}
+	request("POST", "/api/v1/admin/auth/login", map[string]string{"email": "editor@example.com", "password": "separate-admin-password"}, nil, 401)
+	t.Log("separate admin table, session isolation, legacy role denial, origin protection, content publishing, disable, logout and login throttle passed")
 	if _, e = queries.CreateIdentity(context.Background(), db.CreateIdentityParams{UserID: uid, Provider: db.IdentityProviderTelegram, ProviderSubject: "999999999999", Profile: []byte(`{}`)}); e != nil {
 		t.Fatal(e)
 	}
@@ -250,7 +307,12 @@ func TestLearningIntegration(t *testing.T) {
 		t.Fatalf("week reset must preserve lifetime progress: %+v", reset)
 	}
 	t.Log("community privacy, opt-out, validation, ties, duplicate prevention, empty mocks and UTC reset passed")
-	if e = migration.Steps(-4); e != nil {
+	// Only disposable integration content is removed. Production downgrades refuse
+	// to erase attribution while admin-authored content still exists.
+	if _, e = pool.Exec(context.Background(), "WITH removed AS (DELETE FROM content_drafts WHERE id=$1 RETURNING exam_id) DELETE FROM exams WHERE id IN (SELECT exam_id FROM removed)", draftID); e != nil {
+		t.Fatal(e)
+	}
+	if e = migration.Steps(-5); e != nil {
 		t.Fatal("rollback new migrations:", e)
 	}
 	if e = migration.Up(); e != nil {

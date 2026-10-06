@@ -121,6 +121,7 @@ jobs:
           DATABASE_URL: ${{ secrets.APP_DATABASE_URL }}
           SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
           WEB_ORIGIN: ${{ secrets.APP_WEB_ORIGIN }}
+          ADMIN_ORIGIN: ${{ vars.APP_ADMIN_ORIGIN || 'https://mockai.admin.chessinsight.uz' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_MINI_APP_URL: ${{ secrets.TELEGRAM_MINI_APP_URL }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
@@ -143,6 +144,7 @@ jobs:
             "DATABASE_URL=$DATABASE_URL" \
             "SESSION_SECRET=$SESSION_SECRET" \
             "WEB_ORIGIN=$WEB_ORIGIN" \
+            "ADMIN_ORIGIN=$ADMIN_ORIGIN" \
             "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" \
             "TELEGRAM_MINI_APP_URL=$TELEGRAM_MINI_APP_URL" \
             "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" \

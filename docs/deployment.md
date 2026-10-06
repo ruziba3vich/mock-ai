@@ -42,3 +42,31 @@ Deployment files live at `/home/statistics/tools/mock-ai/api` and are updated by
 - is considered deployed only after `/healthz` passes its container health check.
 
 The public HTTPS domain and Nginx virtual host remain separate because no backend domain has been selected yet.
+## Separate admin panel
+
+`https://mockai.admin.chessinsight.uz` serves the administrator application,
+not the student dashboard. Local development uses `/admin` on the Vite server.
+`ADMIN_ORIGIN` defaults to that production origin, or `WEB_ORIGIN` in development.
+Do not add an admin role to a student: it grants no publishing permissions.
+
+Provision a new administrator from the trusted VPS shell after migration 000009.
+The command reads the password on stdin, never from command arguments. There
+are no seeded credentials, automatic promotions or public signup endpoints.
+For example, in Bash (replace email/name):
+
+```sh
+read -r -s -p 'New admin password (12+ characters): ' mockai_admin_password
+printf '%s' "$mockai_admin_password" | docker exec -i mock_ai_api /app/mock-ai-admin --email editor@example.com --name 'Content Editor' --password-stdin
+unset mockai_admin_password
+```
+
+Passwords use the existing Argon2id implementation. Duplicate emails fail
+rather than replacing an existing administrator. For operator-managed account
+disabling, update the exact `admins.id` to `disabled=true`; all its sessions
+are then denied. No student account or other project's database is involved.
+
+Migration 000009 is additive and preserves existing content. Its downgrade
+refuses to run while admin-authored content exists, to prevent attribution loss;
+use a forward fix or an explicitly planned export/migration instead. Initial
+admin provisioning is an operator step, not a GitHub Actions secret or build-time
+password. Student and admin authentication are deliberately independent.

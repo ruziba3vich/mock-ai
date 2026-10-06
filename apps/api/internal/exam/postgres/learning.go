@@ -143,7 +143,7 @@ func (r *Repository) SaveDraft(ctx context.Context, u, id string, c app.Content)
 		if e != nil {
 			return "", app.ErrNotFound
 		}
-		key, e := r.queries.CreateContentDraft(ctx, db.CreateContentDraftParams{AuthorID: uid, Data: b})
+		key, e := r.queries.CreateContentDraft(ctx, db.CreateContentDraftParams{AdminAuthorID: uid, Data: b})
 		return uuidString(key), e
 	}
 	key, e := parseUUID(id)
@@ -177,7 +177,7 @@ func (r *Repository) PublishDraft(ctx context.Context, id string) (string, error
 	}
 	examID := draft.ExamID
 	if !examID.Valid {
-		examID, e = q.CreateContentExam(ctx, db.CreateContentExamParams{Slug: "content-" + uuid.NewString(), CreatedBy: draft.AuthorID})
+		examID, e = q.CreateContentExam(ctx, db.CreateContentExamParams{Slug: "content-" + uuid.NewString(), CreatedByAdmin: draft.AdminAuthorID})
 		if e != nil {
 			return "", e
 		}

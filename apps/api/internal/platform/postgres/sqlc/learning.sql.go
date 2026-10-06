@@ -90,32 +90,32 @@ func (q *Queries) CreateContentBand(ctx context.Context, arg CreateContentBandPa
 }
 
 const createContentDraft = `-- name: CreateContentDraft :one
-INSERT INTO content_drafts(author_id, data) VALUES ($1,$2) RETURNING id
+INSERT INTO content_drafts(admin_author_id, data) VALUES ($1,$2) RETURNING id
 `
 
 type CreateContentDraftParams struct {
-	AuthorID pgtype.UUID `json:"author_id"`
-	Data     []byte      `json:"data"`
+	AdminAuthorID pgtype.UUID `json:"admin_author_id"`
+	Data          []byte      `json:"data"`
 }
 
 func (q *Queries) CreateContentDraft(ctx context.Context, arg CreateContentDraftParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, createContentDraft, arg.AuthorID, arg.Data)
+	row := q.db.QueryRow(ctx, createContentDraft, arg.AdminAuthorID, arg.Data)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
 }
 
 const createContentExam = `-- name: CreateContentExam :one
-INSERT INTO exams(slug,created_by) VALUES ($1,$2) RETURNING id
+INSERT INTO exams(slug,created_by_admin) VALUES ($1,$2) RETURNING id
 `
 
 type CreateContentExamParams struct {
-	Slug      string      `json:"slug"`
-	CreatedBy pgtype.UUID `json:"created_by"`
+	Slug           string      `json:"slug"`
+	CreatedByAdmin pgtype.UUID `json:"created_by_admin"`
 }
 
 func (q *Queries) CreateContentExam(ctx context.Context, arg CreateContentExamParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, createContentExam, arg.Slug, arg.CreatedBy)
+	row := q.db.QueryRow(ctx, createContentExam, arg.Slug, arg.CreatedByAdmin)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -381,7 +381,7 @@ func (q *Queries) ListMistakes(ctx context.Context, userID pgtype.UUID) ([]ListM
 }
 
 const lockContentDraft = `-- name: LockContentDraft :one
-SELECT id, exam_id, author_id, data, updated_at FROM content_drafts WHERE id = $1 FOR UPDATE
+SELECT id, exam_id, author_id, data, updated_at, admin_author_id FROM content_drafts WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockContentDraft(ctx context.Context, id pgtype.UUID) (ContentDraft, error) {
@@ -393,6 +393,7 @@ func (q *Queries) LockContentDraft(ctx context.Context, id pgtype.UUID) (Content
 		&i.AuthorID,
 		&i.Data,
 		&i.UpdatedAt,
+		&i.AdminAuthorID,
 	)
 	return i, err
 }

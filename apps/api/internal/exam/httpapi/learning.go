@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	adminhttp "github.com/own/mock-ai/apps/api/internal/admin/httpapi"
 	app "github.com/own/mock-ai/apps/api/internal/exam/application"
 	identity "github.com/own/mock-ai/apps/api/internal/identity/httpapi"
 	"net/http"
@@ -101,17 +102,14 @@ func (h *Handler) registerLearning(mux *http.ServeMux) {
 	})
 	admin := func(fn http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			u, _ := identity.UserFromContext(r.Context())
-			for _, role := range u.Roles {
-				if role == "admin" {
-					fn(w, r)
-					return
-				}
+			if h.admins == nil {
+				writeError(w, 401, "unauthorized", "Admin sign-in required")
+				return
 			}
-			writeError(w, 403, "forbidden", "Administrator access required")
+			h.admins.RequireAdmin(fn).ServeHTTP(w, r)
 		}
 	}
-	handle("GET /api/v1/admin/content", admin(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/v1/admin/content", admin(func(w http.ResponseWriter, r *http.Request) {
 		v, e := h.service.ListDrafts(r.Context())
 		if e != nil {
 			h.fail(w, e)
@@ -125,7 +123,7 @@ func (h *Handler) registerLearning(mux *http.ServeMux) {
 			writeError(w, 400, "invalid_request", e.Error())
 			return
 		}
-		u, _ := identity.UserFromContext(r.Context())
+		u := adminhttp.AdminFromContext(r.Context())
 		id, e := h.service.SaveDraft(r.Context(), u.ID, r.PathValue("draft_id"), v)
 		if e != nil {
 			h.fail(w, e)
@@ -133,9 +131,9 @@ func (h *Handler) registerLearning(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]string{"id": id})
 	})
-	handle("POST /api/v1/admin/content", save)
-	handle("PUT /api/v1/admin/content/{draft_id}", save)
-	handle("POST /api/v1/admin/content/{draft_id}/publish", admin(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/v1/admin/content", save)
+	mux.HandleFunc("PUT /api/v1/admin/content/{draft_id}", save)
+	mux.HandleFunc("POST /api/v1/admin/content/{draft_id}/publish", admin(func(w http.ResponseWriter, r *http.Request) {
 		id, e := h.service.PublishDraft(r.Context(), r.PathValue("draft_id"))
 		if e != nil {
 			h.fail(w, e)

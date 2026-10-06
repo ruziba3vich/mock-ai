@@ -15,6 +15,8 @@ type Querier interface {
 	AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error
 	ClaimReminders(ctx context.Context) ([]ClaimRemindersRow, error)
 	CompleteAttempt(ctx context.Context, arg CompleteAttemptParams) (Attempt, error)
+	CreateAdmin(ctx context.Context, arg CreateAdminParams) (pgtype.UUID, error)
+	CreateAdminSession(ctx context.Context, arg CreateAdminSessionParams) error
 	CreateAttempt(ctx context.Context, arg CreateAttemptParams) (Attempt, error)
 	CreateContentAnswer(ctx context.Context, arg CreateContentAnswerParams) error
 	CreateContentBand(ctx context.Context, arg CreateContentBandParams) error
@@ -28,10 +30,12 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateVerifiedUser(ctx context.Context, arg CreateVerifiedUserParams) (User, error)
+	DeleteAdminSession(ctx context.Context, tokenHash string) error
 	DisableReminder(ctx context.Context, userID pgtype.UUID) error
 	EnsureStudentProfile(ctx context.Context, userID pgtype.UUID) error
 	ExpireStaleAttemptsForExam(ctx context.Context, arg ExpireStaleAttemptsForExamParams) error
 	GetActiveAttempt(ctx context.Context, arg GetActiveAttemptParams) (Attempt, error)
+	GetAdminSession(ctx context.Context, tokenHash string) (GetAdminSessionRow, error)
 	GetAttempt(ctx context.Context, arg GetAttemptParams) (Attempt, error)
 	GetAttemptForUpdate(ctx context.Context, arg GetAttemptForUpdateParams) (Attempt, error)
 	GetAttemptReview(ctx context.Context, arg GetAttemptReviewParams) ([]GetAttemptReviewRow, error)
@@ -72,6 +76,8 @@ type Querier interface {
 	RecordAttemptReview(ctx context.Context, arg RecordAttemptReviewParams) (pgtype.UUID, error)
 	RecordMistakeRetry(ctx context.Context, arg RecordMistakeRetryParams) error
 	RecordPracticeAnswer(ctx context.Context, arg RecordPracticeAnswerParams) error
+	ReserveAdminLogin(ctx context.Context, email string) (ReserveAdminLoginRow, error)
+	ResetAdminLogin(ctx context.Context, id pgtype.UUID) error
 	RevokeSession(ctx context.Context, tokenHash []byte) error
 	SaveAttemptAnswer(ctx context.Context, arg SaveAttemptAnswerParams) (AttemptAnswer, error)
 	SaveCommunityProfile(ctx context.Context, arg SaveCommunityProfileParams) error

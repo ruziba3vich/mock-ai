@@ -12,6 +12,7 @@ type Config struct {
 	HTTPAddr           string
 	DatabaseURL        string
 	WebOrigin          string
+	AdminOrigin        string
 	TelegramBotToken   string
 	TelegramMiniAppURL string
 	GoogleClientID     string
@@ -37,6 +38,11 @@ func Load() (Config, error) {
 	}
 	cfg.TelegramMiniAppURL = envOr("TELEGRAM_MINI_APP_URL", cfg.WebOrigin)
 	cfg.SecureCookie = cfg.Environment != "development"
+	if cfg.SecureCookie {
+		cfg.AdminOrigin = envOr("ADMIN_ORIGIN", "https://mockai.admin.chessinsight.uz")
+	} else {
+		cfg.AdminOrigin = envOr("ADMIN_ORIGIN", cfg.WebOrigin)
+	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
 	}

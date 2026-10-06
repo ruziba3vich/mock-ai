@@ -12,7 +12,9 @@ ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/mock-ai-api ./cmd/api && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags="-s -w" -o /out/mock-ai-migrate ./cmd/migrate
+    go build -trimpath -ldflags="-s -w" -o /out/mock-ai-migrate ./cmd/migrate && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /out/mock-ai-admin ./cmd/admin
 
 FROM alpine:3.22
 
@@ -22,6 +24,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
 WORKDIR /app
 COPY --from=builder /out/mock-ai-api /app/mock-ai-api
 COPY --from=builder /out/mock-ai-migrate /app/mock-ai-migrate
+COPY --from=builder /out/mock-ai-admin /app/mock-ai-admin
 
 USER mockai
 EXPOSE 8080
@@ -29,4 +32,3 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=6 \
     CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1
 
 ENTRYPOINT ["/app/mock-ai-api"]
-

@@ -8,6 +8,7 @@ services:
       HTTP_ADDR: :8080
       DATABASE_URL: ${DATABASE_URL}
       WEB_ORIGIN: ${WEB_ORIGIN}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-https://mockai.admin.chessinsight.uz}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_MINI_APP_URL: ${TELEGRAM_MINI_APP_URL:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

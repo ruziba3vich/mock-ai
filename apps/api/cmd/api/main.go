@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	adminapp "github.com/own/mock-ai/apps/api/internal/admin/application"
+	adminhttp "github.com/own/mock-ai/apps/api/internal/admin/httpapi"
+	adminpg "github.com/own/mock-ai/apps/api/internal/admin/postgres"
 
 	examapp "github.com/own/mock-ai/apps/api/internal/exam/application"
 	examhttp "github.com/own/mock-ai/apps/api/internal/exam/httpapi"
@@ -55,7 +58,8 @@ func main() {
 	identityHandler := identityhttp.New(identityService, googleProvider, logger, cfg.WebOrigin, cfg.SecureCookie)
 	examRepository := exampostgres.New(pool)
 	examService := examapp.NewService(examRepository)
-	examHandler := examhttp.New(examService, identityHandler, logger)
+	adminHandler := adminhttp.New(adminapp.New(adminpg.New(pool)), cfg.AdminOrigin, cfg.SecureCookie)
+	examHandler := examhttp.New(examService, identityHandler, logger, adminHandler)
 	bot, err := telegrambot.New(cfg.TelegramBotToken, cfg.TelegramMiniAppURL, identityService, logger)
 	if err != nil {
 		logger.Error("initialize Telegram bot", "error", err)
@@ -64,7 +68,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpserver.New(logger, cfg.WebOrigin, identityHandler, examHandler),
+		Handler:           httpserver.New(logger, cfg.WebOrigin, identityHandler, examHandler, adminHandler),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
