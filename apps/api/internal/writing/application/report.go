@@ -8,12 +8,19 @@ import (
 	"strings"
 )
 
-const RubricVersion = "task2-v1"
+const RubricVersion = "task2-v2"
 
 type Criterion struct {
-	Key    string  `json:"key"`
-	Score  float64 `json:"score"`
-	Reason string  `json:"reason"`
+	Key          string  `json:"key"`
+	Score        float64 `json:"score"`
+	Reason       string  `json:"reason"`
+	HowToImprove string  `json:"how_to_improve"`
+}
+type TopicAlignment struct {
+	Status      string `json:"status"`
+	PromptTopic string `json:"prompt_topic"`
+	EssayTopic  string `json:"essay_topic"`
+	Explanation string `json:"explanation"`
 }
 type Issue struct {
 	Category    string `json:"category"`
@@ -28,14 +35,15 @@ type Rewrite struct {
 	Explanation string `json:"explanation"`
 }
 type Report struct {
-	ModelVersion string      `json:"model_version"`
-	Overall      float64     `json:"overall"`
-	Summary      string      `json:"summary"`
-	Criteria     []Criterion `json:"criteria"`
-	Strengths    []string    `json:"strengths"`
-	Issues       []Issue     `json:"issues"`
-	NextSteps    []string    `json:"next_steps"`
-	Rewrite      Rewrite     `json:"rewrite"`
+	ModelVersion   string         `json:"model_version"`
+	Overall        float64        `json:"overall"`
+	Summary        string         `json:"summary"`
+	TopicAlignment TopicAlignment `json:"topic_alignment"`
+	Criteria       []Criterion    `json:"criteria"`
+	Strengths      []string       `json:"strengths"`
+	Issues         []Issue        `json:"issues"`
+	NextSteps      []string       `json:"next_steps"`
+	Rewrite        Rewrite        `json:"rewrite"`
 }
 
 // The model supplies criterion estimates, never the authoritative aggregate.
@@ -63,11 +71,14 @@ func ParseReport(raw []byte, essay string) (Report, error) {
 	}
 	for _, c := range r.Criteria {
 		seen, ok := required[c.Key]
-		if !ok || seen || math.IsNaN(c.Score) || c.Score < 0 || c.Score > 9 || c.Score*2 != math.Trunc(c.Score*2) || strings.TrimSpace(c.Reason) == "" || len(c.Reason) > 4000 {
+		if !ok || seen || math.IsNaN(c.Score) || c.Score < 0 || c.Score > 9 || c.Score*2 != math.Trunc(c.Score*2) || strings.TrimSpace(c.Reason) == "" || len(c.Reason) > 4000 || strings.TrimSpace(c.HowToImprove) == "" || len(c.HowToImprove) > 2000 {
 			return r, errors.New("invalid criteria")
 		}
 		required[c.Key] = true
 		sum += c.Score
+	}
+	if !map[string]bool{"aligned": true, "partly_aligned": true, "off_topic": true}[r.TopicAlignment.Status] || strings.TrimSpace(r.TopicAlignment.PromptTopic) == "" || strings.TrimSpace(r.TopicAlignment.EssayTopic) == "" || strings.TrimSpace(r.TopicAlignment.Explanation) == "" || len(r.TopicAlignment.PromptTopic) > 500 || len(r.TopicAlignment.EssayTopic) > 500 || len(r.TopicAlignment.Explanation) > 2000 {
+		return r, errors.New("invalid topic alignment")
 	}
 	if len(r.Issues) > 15 || len(r.NextSteps) < 1 || len(r.NextSteps) > 6 || len(r.Strengths) > 5 {
 		return r, errors.New("invalid feedback length")

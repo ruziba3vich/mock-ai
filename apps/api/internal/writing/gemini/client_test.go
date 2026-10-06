@@ -22,6 +22,10 @@ func TestStructuredRequestAndSafeErrors(t *testing.T) {
 		if json.NewDecoder(r.Body).Decode(&body) != nil || body["systemInstruction"] == nil || body["generationConfig"] == nil {
 			t.Error("missing structured contract")
 		}
+		contract := string(body["generationConfig"])
+		if !strings.Contains(contract, "topic_alignment") || !strings.Contains(contract, "how_to_improve") || !strings.Contains(contract, "off_topic") {
+			t.Error("missing topic-alignment feedback contract")
+		}
 		if status != 200 {
 			w.WriteHeader(status)
 			_, _ = w.Write([]byte("private-test-key provider diagnostic"))

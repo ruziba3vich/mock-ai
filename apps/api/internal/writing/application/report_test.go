@@ -7,7 +7,7 @@ import (
 
 func TestReportValidationAndAggregate(t *testing.T) {
 	essay := "Public transport reduces congestion. It also improves access to work."
-	r := Report{Overall: 9, Summary: "Develop the explanation.", Criteria: []Criterion{{"task_response", 6, "Evidence is thin."}, {"coherence_cohesion", 7, "Clear organisation."}, {"lexical_resource", 6, "Limited variety."}, {"grammar", 7, "Mostly accurate."}}, Strengths: []string{"Clear position."}, Issues: []Issue{{"argument", "Public transport reduces congestion.", "Explain the mechanism.", "Explain how fewer cars help.", "Fewer car journeys free road space."}}, NextSteps: []string{"Add a causal explanation."}, Rewrite: Rewrite{essay, "Reliable buses let more workers travel without a car.", "Makes the causal link explicit."}}
+	r := Report{Overall: 9, Summary: "Develop the explanation.", TopicAlignment: TopicAlignment{Status: "aligned", PromptTopic: "public transport investment", EssayTopic: "public transport benefits", Explanation: "The essay addresses the task."}, Criteria: []Criterion{{Key: "task_response", Score: 6, Reason: "Evidence is thin.", HowToImprove: "Develop one example."}, {Key: "coherence_cohesion", Score: 7, Reason: "Clear organisation.", HowToImprove: "Link the example back to the claim."}, {Key: "lexical_resource", Score: 6, Reason: "Limited variety.", HowToImprove: "Use more precise transport vocabulary."}, {Key: "grammar", Score: 7, Reason: "Mostly accurate.", HowToImprove: "Vary complex sentence structures."}}, Strengths: []string{"Clear position."}, Issues: []Issue{{"argument", "Public transport reduces congestion.", "Explain the mechanism.", "Explain how fewer cars help.", "Fewer car journeys free road space."}}, NextSteps: []string{"Add a causal explanation."}, Rewrite: Rewrite{essay, "Reliable buses let more workers travel without a car.", "Makes the causal link explicit."}}
 	raw, _ := json.Marshal(r)
 	got, e := ParseReport(raw, essay)
 	if e != nil || got.Overall != 6.5 {
@@ -29,5 +29,11 @@ func TestReportValidationAndAggregate(t *testing.T) {
 	raw, _ = json.Marshal(r)
 	if _, e = ParseReport(raw, essay); e == nil {
 		t.Fatal("duplicate criteria accepted")
+	}
+	r.Criteria[1].Key = "coherence_cohesion"
+	r.TopicAlignment.Status = "unknown"
+	raw, _ = json.Marshal(r)
+	if _, e = ParseReport(raw, essay); e == nil {
+		t.Fatal("invalid topic alignment accepted")
 	}
 }
