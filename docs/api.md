@@ -68,3 +68,30 @@ Content supports multiple sections, options, accepted answers, explanations, HTT
 Study profile updates accept `target_band` in half-band steps from 4.0 to 9.0, an optional future `exam_date` in `YYYY-MM-DD` form, `track` as `academic` or `general_training`, and `daily_goal_minutes` from 10 to 180. General Training content is reserved by the API but is not yet exposed in the student UI.
 
 Answer saves accept `{"values":["answer"]}`. Multiple-select questions use more than one value. Each successful overwrite increments the saved answer revision.
+# Community and challenges
+
+Authenticated `GET /api/v1/me/community` returns `profile` (nickname, enabled),
+`stats` (questions, mocks, days, today_questions, week_mocks, week_days,
+week_points), and `board` entries (nickname, points, position, is_me).
+Authenticated `PUT /api/v1/me/community` accepts `{ "nickname": "Reader 42",
+"enabled": true }` and returns 204. Nicknames allow 2–24 Unicode letters,
+numbers, spaces, hyphens and underscores; invalid values return 422.
+
+Participation defaults off. Only explicitly chosen nicknames and points are
+visible to authenticated students; no public user identifiers, names, emails or
+photos are returned. Disabling visibility removes the student immediately.
+The board returns the top 50 plus the requesting student's position. Ties share
+rank; there are no fabricated participants. Nicknames are not unique identities.
+
+Points measure activity, not accuracy or IELTS ability: one point for each
+distinct practice question and ten per distinct scored mock version with a
+saved nonempty answer, each counted once per Monday–Sunday UTC week. Historical
+activity in the current week counts on opt-in. Repeated submissions do not add
+points. The current implementation is friendly competition, not a secure contest
+or prize system. Points are derived from persisted activity, not client scores.
+
+Daily five, three study days per week, and one answered mock per week power the
+frontend challenges. Lifetime distinct questions, answered mock versions and
+study days power achievements. Vocabulary warm-ups are local, unranked rounds.
+Migration 000008 creates the opt-in table and aggregate views; rollback only
+removes these community objects, preserving the underlying study records.

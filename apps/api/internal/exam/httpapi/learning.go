@@ -8,6 +8,28 @@ import (
 
 func (h *Handler) registerLearning(mux *http.ServeMux) {
 	handle := func(path string, fn http.HandlerFunc) { mux.Handle(path, h.auth.RequireUser(fn)) }
+	handle("GET /api/v1/me/community", func(w http.ResponseWriter, r *http.Request) {
+		u, _ := identity.UserFromContext(r.Context())
+		v, e := h.service.GetCommunity(r.Context(), u.ID)
+		if e != nil {
+			h.fail(w, e)
+			return
+		}
+		writeJSON(w, 200, v)
+	})
+	handle("PUT /api/v1/me/community", func(w http.ResponseWriter, r *http.Request) {
+		var p app.CommunityProfile
+		if e := decodeJSON(w, r, &p); e != nil {
+			writeError(w, 400, "invalid_request", e.Error())
+			return
+		}
+		u, _ := identity.UserFromContext(r.Context())
+		if e := h.service.SaveCommunityProfile(r.Context(), u.ID, p); e != nil {
+			h.fail(w, e)
+			return
+		}
+		w.WriteHeader(204)
+	})
 	handle("GET /api/v1/attempts/{attempt_id}/workspace", func(w http.ResponseWriter, r *http.Request) {
 		u, _ := identity.UserFromContext(r.Context())
 		v, e := h.service.GetWorkspace(r.Context(), u.ID, r.PathValue("attempt_id"))

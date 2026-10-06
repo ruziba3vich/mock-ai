@@ -121,10 +121,44 @@ func TestLearningIntegration(t *testing.T) {
 		t.Fatal("no practice", e)
 	}
 	qid := practice[0].ID
+	request("GET", "/api/v1/me/community", nil, nil, 401)
+	request("PUT", "/api/v1/me/community", app.CommunityProfile{Nickname: "x", Enabled: true}, cookie, 422)
+	request("PUT", "/api/v1/me/community", app.CommunityProfile{Nickname: "<script>", Enabled: true}, cookie, 422)
 	request("POST", "/api/v1/me/mistakes/"+qid+"/retry", map[string]any{"values": []string{"wrong"}}, other, 404)
 	bad := request("POST", "/api/v1/practice/questions/"+qid+"/check", map[string]any{"values": []string{"deliberately wrong"}}, cookie, 200)
 	var feedback app.PracticeFeedback
 	json.Unmarshal(bad["feedback"], &feedback)
+	// Activity is private by default and repetitions cannot inflate the weekly score.
+	community := func(c *http.Cookie) app.Community {
+		t.Helper()
+		raw := request("GET", "/api/v1/me/community", nil, c, 200)
+		b, _ := json.Marshal(raw)
+		var out app.Community
+		if e := json.Unmarshal(b, &out); e != nil {
+			t.Fatal(e)
+		}
+		return out
+	}
+	initial := community(cookie)
+	if initial.Profile.Enabled || initial.Stats.WeekPoints != 1 || len(initial.Board) != 0 {
+		t.Fatalf("unexpected initial community: %+v", initial)
+	}
+	request("POST", "/api/v1/practice/questions/"+qid+"/check", map[string]any{"values": []string{"wrong again"}}, cookie, 200)
+	if community(cookie).Stats.WeekPoints != 1 {
+		t.Fatal("duplicate practice inflated points")
+	}
+	request("PUT", "/api/v1/me/community", app.CommunityProfile{Nickname: "Quiet Learner", Enabled: true}, cookie, 204)
+	visible := community(other)
+	if len(visible.Board) != 1 || visible.Board[0].Nickname != "Quiet Learner" || visible.Board[0].IsMe || visible.Board[0].Position != 1 {
+		t.Fatalf("bad public board: %+v", visible)
+	}
+	if !community(cookie).Board[0].IsMe {
+		t.Fatal("own rank not identified")
+	}
+	request("PUT", "/api/v1/me/community", app.CommunityProfile{Nickname: "Quiet Learner", Enabled: false}, cookie, 204)
+	if len(community(other).Board) != 0 {
+		t.Fatal("opted-out student still visible")
+	}
 	notebook := request("GET", "/api/v1/me/mistakes", nil, cookie, 200)
 	var mistakes []app.Mistake
 	json.Unmarshal(notebook["mistakes"], &mistakes)
@@ -172,7 +206,51 @@ func TestLearningIntegration(t *testing.T) {
 	}
 	request("PUT", "/api/v1/me/reminder", app.Reminder{Enabled: false, LocalTime: "00:00", Timezone: "UTC"}, cookie, 204)
 	t.Log("ownership, notebook resolution, annotations, admin publishing/versioning, reminder validation and single daily claim passed")
-	if e = migration.Steps(-3); e != nil {
+	// Equal scores share rank; nicknames never reveal another user's identifier.
+	request("POST", "/api/v1/practice/questions/"+qid+"/check", map[string]any{"values": []string{"test"}}, other, 200)
+	request("PUT", "/api/v1/me/community", app.CommunityProfile{Nickname: "Second Reader", Enabled: true}, other, 204)
+	request("PUT", "/api/v1/me/community", app.CommunityProfile{Nickname: "Quiet Learner", Enabled: true}, cookie, 204)
+	tied := community(cookie)
+	if len(tied.Board) != 2 || tied.Board[0].Position != 1 || tied.Board[1].Position != 1 {
+		t.Fatalf("ties should share rank: %+v", tied.Board)
+	}
+	if _, e = service.SubmitAttempt(context.Background(), student.ID, attempt.ID); e != nil {
+		t.Fatal(e)
+	}
+	if community(cookie).Stats.WeekPoints != 1 {
+		t.Fatal("empty mock earned points")
+	}
+	exam, e := service.GetExam(context.Background(), exams[0].ID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for i := 0; i < 2; i++ {
+		a, e := service.StartAttempt(context.Background(), student.ID, exams[0].ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = service.SaveAnswer(context.Background(), student.ID, a.ID, exam.Sections[0].Questions[0].ID, []string{"answer"}); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = service.SubmitAttempt(context.Background(), student.ID, a.ID); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if community(cookie).Stats.WeekPoints != 11 {
+		t.Fatal("mock version should count once each week")
+	}
+	if _, e = pool.Exec(context.Background(), "UPDATE practice_answers SET attempted_at=date_trunc('week',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' - interval '1 second'"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = pool.Exec(context.Background(), "UPDATE attempts SET scored_at=date_trunc('week',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' - interval '1 second' WHERE status='scored'"); e != nil {
+		t.Fatal(e)
+	}
+	reset := community(cookie)
+	if reset.Stats.WeekPoints != 0 || len(reset.Board) != 0 || reset.Stats.Questions != 1 {
+		t.Fatalf("week reset must preserve lifetime progress: %+v", reset)
+	}
+	t.Log("community privacy, opt-out, validation, ties, duplicate prevention, empty mocks and UTC reset passed")
+	if e = migration.Steps(-4); e != nil {
 		t.Fatal("rollback new migrations:", e)
 	}
 	if e = migration.Up(); e != nil {

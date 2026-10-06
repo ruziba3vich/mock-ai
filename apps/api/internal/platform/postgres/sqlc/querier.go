@@ -36,6 +36,9 @@ type Querier interface {
 	GetAttemptForUpdate(ctx context.Context, arg GetAttemptForUpdateParams) (Attempt, error)
 	GetAttemptReview(ctx context.Context, arg GetAttemptReviewParams) ([]GetAttemptReviewRow, error)
 	GetBandForRawScore(ctx context.Context, arg GetBandForRawScoreParams) (pgtype.Numeric, error)
+	GetCommunityBoard(ctx context.Context, studentID pgtype.UUID) ([]GetCommunityBoardRow, error)
+	GetCommunityProfile(ctx context.Context, id pgtype.UUID) (GetCommunityProfileRow, error)
+	GetCommunityStats(ctx context.Context, userID pgtype.UUID) (GetCommunityStatsRow, error)
 	GetOwnedMistakeKey(ctx context.Context, arg GetOwnedMistakeKeyParams) ([]GetOwnedMistakeKeyRow, error)
 	GetPasswordLogin(ctx context.Context, lower string) (GetPasswordLoginRow, error)
 	GetPracticeAnswerKey(ctx context.Context, id pgtype.UUID) ([]GetPracticeAnswerKeyRow, error)
@@ -71,6 +74,7 @@ type Querier interface {
 	RecordPracticeAnswer(ctx context.Context, arg RecordPracticeAnswerParams) error
 	RevokeSession(ctx context.Context, tokenHash []byte) error
 	SaveAttemptAnswer(ctx context.Context, arg SaveAttemptAnswerParams) (AttemptAnswer, error)
+	SaveCommunityProfile(ctx context.Context, arg SaveCommunityProfileParams) error
 	SaveReminder(ctx context.Context, arg SaveReminderParams) error
 	SaveWorkspace(ctx context.Context, arg SaveWorkspaceParams) ([]byte, error)
 	SetAttemptAnswerScore(ctx context.Context, arg SetAttemptAnswerScoreParams) error

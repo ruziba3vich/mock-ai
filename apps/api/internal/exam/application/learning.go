@@ -60,6 +60,8 @@ type Draft struct {
 	Data   Content `json:"data"`
 }
 type LearningRepository interface {
+	GetCommunity(context.Context, string) (Community, error)
+	SaveCommunityProfile(context.Context, string, CommunityProfile) error
 	GetWorkspace(context.Context, string, string) (Workspace, error)
 	SaveWorkspace(context.Context, string, string, Workspace) error
 	ListMistakes(context.Context, string) ([]Mistake, error)

@@ -453,6 +453,33 @@ type BandConversion struct {
 	Band            pgtype.Numeric `json:"band"`
 }
 
+type CommunityActivity struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	ActivityKey interface{}        `json:"activity_key"`
+	OccurredAt  pgtype.Timestamptz `json:"occurred_at"`
+	Points      int32              `json:"points"`
+}
+
+type CommunityProfile struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	Nickname string      `json:"nickname"`
+	Enabled  bool        `json:"enabled"`
+}
+
+type CommunityWeeklyRank struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	Nickname string      `json:"nickname"`
+	Points   int32       `json:"points"`
+	Position int32       `json:"position"`
+	Ordinal  int64       `json:"ordinal"`
+}
+
+type CommunityWeeklyScore struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	Nickname string      `json:"nickname"`
+	Points   int32       `json:"points"`
+}
+
 type ContentDraft struct {
 	ID        pgtype.UUID        `json:"id"`
 	ExamID    pgtype.UUID        `json:"exam_id"`
