@@ -1,0 +1,230 @@
+package postgres
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	app "github.com/own/mock-ai/apps/api/internal/exam/application"
+	db "github.com/own/mock-ai/apps/api/internal/platform/postgres/sqlc"
+)
+
+func text(s string) pgtype.Text { return pgtype.Text{String: s, Valid: s != ""} }
+
+func learningError(e error) error {
+	if errors.Is(e, pgx.ErrNoRows) {
+		return app.ErrNotFound
+	}
+	return e
+}
+func (r *Repository) GetWorkspace(ctx context.Context, u, a string) (app.Workspace, error) {
+	p, e := attemptParams(u, a)
+	if e != nil {
+		return app.Workspace{}, app.ErrNotFound
+	}
+	b, e := r.queries.GetWorkspace(ctx, db.GetWorkspaceParams{AttemptID: p.ID, UserID: p.UserID})
+	if e != nil {
+		return app.Workspace{}, learningError(e)
+	}
+	var w app.Workspace
+	e = json.Unmarshal(b, &w)
+	return w, e
+}
+func (r *Repository) SaveWorkspace(ctx context.Context, u, a string, w app.Workspace) error {
+	p, e := attemptParams(u, a)
+	if e != nil {
+		return app.ErrNotFound
+	}
+	b, e := json.Marshal(w)
+	if e != nil {
+		return e
+	}
+	_, e = r.queries.SaveWorkspace(ctx, db.SaveWorkspaceParams{AttemptID: p.ID, UserID: p.UserID, Data: b})
+	return learningError(e)
+}
+func (r *Repository) ListMistakes(ctx context.Context, u string) ([]app.Mistake, error) {
+	uid, e := parseUUID(u)
+	if e != nil {
+		return nil, app.ErrNotFound
+	}
+	rows, e := r.queries.ListMistakes(ctx, uid)
+	if e != nil {
+		return nil, e
+	}
+	out := make([]app.Mistake, 0, len(rows))
+	for _, row := range rows {
+		options, e := r.queries.ListQuestionOptions(ctx, row.ID)
+		if e != nil {
+			return nil, e
+		}
+		opts := make([]app.Option, 0, len(options))
+		for _, o := range options {
+			opts = append(opts, app.Option{ID: uuidString(o.ID), Position: o.Position, Label: o.Label, Value: o.Value})
+		}
+		missed, _ := row.LastMissed.(time.Time)
+		out = append(out, app.Mistake{PracticeQuestion: app.PracticeQuestion{ID: uuidString(row.ID), Type: string(row.Type), Prompt: row.Prompt, Options: opts, Passage: textString(row.Passage), AudioURL: textString(row.AudioUrl), SectionTitle: row.SectionTitle, Skill: string(row.Skill)}, Resolved: row.Resolved, LastMissed: missed})
+	}
+	return out, nil
+}
+func (r *Repository) RetryMistake(ctx context.Context, u, q string, values []string) (app.PracticeFeedback, error) {
+	uid, e := parseUUID(u)
+	if e != nil {
+		return app.PracticeFeedback{}, app.ErrNotFound
+	}
+	qid, e := parseUUID(q)
+	if e != nil {
+		return app.PracticeFeedback{}, app.ErrNotFound
+	}
+	rows, e := r.queries.GetOwnedMistakeKey(ctx, db.GetOwnedMistakeKeyParams{UserID: uid, QuestionID: qid})
+	if e != nil {
+		return app.PracticeFeedback{}, e
+	}
+	if len(rows) == 0 {
+		return app.PracticeFeedback{}, app.ErrNotFound
+	}
+	keys := make([]acceptedAnswer, 0, len(rows))
+	valuesKey := []string{}
+	for _, row := range rows {
+		keys = append(keys, acceptedAnswer{value: row.Value, caseSensitive: row.IsCaseSensitive})
+		valuesKey = append(valuesKey, row.Value)
+	}
+	correct := answerCorrect(rows[0].Type, values, keys)
+	payload, _ := json.Marshal(map[string]any{"values": values})
+	e = r.queries.RecordMistakeRetry(ctx, db.RecordMistakeRetryParams{UserID: uid, QuestionID: qid, Answer: payload, IsCorrect: correct})
+	return app.PracticeFeedback{QuestionID: q, Correct: correct, AcceptedAnswer: valuesKey, Explanation: rows[0].Explanation}, e
+}
+func (r *Repository) GetReminder(ctx context.Context, u string) (app.Reminder, error) {
+	uid, e := parseUUID(u)
+	if e != nil {
+		return app.Reminder{}, app.ErrNotFound
+	}
+	b, e := r.queries.GetReminder(ctx, uid)
+	if e != nil {
+		return app.Reminder{}, e
+	}
+	var reminder app.Reminder
+	e = json.Unmarshal(b, &reminder)
+	return reminder, e
+}
+func (r *Repository) SaveReminder(ctx context.Context, u string, v app.Reminder) error {
+	uid, e := parseUUID(u)
+	if e != nil {
+		return app.ErrNotFound
+	}
+	return r.queries.SaveReminder(ctx, db.SaveReminderParams{UserID: uid, Enabled: v.Enabled, LocalTime: v.LocalTime, Timezone: v.Timezone})
+}
+func (r *Repository) ListDrafts(ctx context.Context) ([]app.Draft, error) {
+	rows, e := r.queries.ListContentDrafts(ctx)
+	if e != nil {
+		return nil, e
+	}
+	out := []app.Draft{}
+	for _, row := range rows {
+		var c app.Content
+		if e = json.Unmarshal(row.Data, &c); e != nil {
+			return nil, e
+		}
+		out = append(out, app.Draft{ID: uuidString(row.ID), ExamID: uuidString(row.ExamID), Data: c})
+	}
+	return out, nil
+}
+func (r *Repository) SaveDraft(ctx context.Context, u, id string, c app.Content) (string, error) {
+	b, e := json.Marshal(c)
+	if e != nil {
+		return "", e
+	}
+	if id == "" {
+		uid, e := parseUUID(u)
+		if e != nil {
+			return "", app.ErrNotFound
+		}
+		key, e := r.queries.CreateContentDraft(ctx, db.CreateContentDraftParams{AuthorID: uid, Data: b})
+		return uuidString(key), e
+	}
+	key, e := parseUUID(id)
+	if e != nil {
+		return "", app.ErrNotFound
+	}
+	_, e = r.queries.UpdateContentDraft(ctx, db.UpdateContentDraftParams{ID: key, Data: b})
+	return id, learningError(e)
+}
+func (r *Repository) PublishDraft(ctx context.Context, id string) (string, error) {
+	key, e := parseUUID(id)
+	if e != nil {
+		return "", app.ErrNotFound
+	}
+	tx, e := r.pool.Begin(ctx)
+	if e != nil {
+		return "", e
+	}
+	defer tx.Rollback(ctx)
+	q := r.queries.WithTx(tx)
+	draft, e := q.LockContentDraft(ctx, key)
+	if e != nil {
+		return "", learningError(e)
+	}
+	var c app.Content
+	if e = json.Unmarshal(draft.Data, &c); e != nil {
+		return "", e
+	}
+	if e = app.ValidateContent(c, true); e != nil {
+		return "", e
+	}
+	examID := draft.ExamID
+	if !examID.Valid {
+		examID, e = q.CreateContentExam(ctx, db.CreateContentExamParams{Slug: "content-" + uuid.NewString(), CreatedBy: draft.AuthorID})
+		if e != nil {
+			return "", e
+		}
+		if e = q.SetDraftExam(ctx, db.SetDraftExamParams{ID: key, ExamID: examID}); e != nil {
+			return "", e
+		}
+	}
+	if e = q.ArchiveContentVersions(ctx, examID); e != nil {
+		return "", e
+	}
+	version, e := q.PublishContentVersion(ctx, db.PublishContentVersionParams{ExamID: examID, Title: c.Title, Description: c.Description, Skill: db.ExamSkill(c.Skill), Purpose: db.ExamPurpose(c.Purpose), DurationSeconds: c.Duration, Instructions: c.Instructions})
+	if e != nil {
+		return "", e
+	}
+	for i, s := range c.Sections {
+		passage, transcript := s.Passage, ""
+		if c.Skill == "listening" {
+			passage, transcript = "", s.Passage
+		}
+		section, e := q.CreateContentSection(ctx, db.CreateContentSectionParams{ExamVersionID: version, Position: int32(i + 1), Title: s.Title, Instructions: s.Instructions, AudioUrl: text(s.AudioURL), Passage: text(passage), Transcript: text(transcript)})
+		if e != nil {
+			return "", e
+		}
+		for j, question := range s.Questions {
+			questionID, e := q.CreateContentQuestion(ctx, db.CreateContentQuestionParams{SectionID: section, Position: int32(j + 1), Type: db.QuestionType(question.Type), Prompt: question.Prompt, Explanation: question.Explanation})
+			if e != nil {
+				return "", e
+			}
+			for k, o := range question.Options {
+				if e = q.CreateContentOption(ctx, db.CreateContentOptionParams{QuestionID: questionID, Position: int32(k + 1), Label: fmt.Sprintf("%c", 'A'+k), Value: o}); e != nil {
+					return "", e
+				}
+			}
+			for k, a := range question.Answers {
+				if e = q.CreateContentAnswer(ctx, db.CreateContentAnswerParams{QuestionID: questionID, Position: int32(k + 1), Value: a}); e != nil {
+					return "", e
+				}
+			}
+		}
+	}
+	for _, b := range c.Bands {
+		if e = q.CreateContentBand(ctx, db.CreateContentBandParams{ExamVersionID: version, MinimumRawScore: numeric(float64(b.Minimum)), Band: numeric(b.Band)}); e != nil {
+			return "", e
+		}
+	}
+	if e = tx.Commit(ctx); e != nil {
+		return "", e
+	}
+	return uuidString(examID), nil
+}

@@ -42,7 +42,23 @@ When `TELEGRAM_BOT_TOKEN` is configured, the API also consumes bot updates. `/st
 
 Practice checks accept the same `{"values":["answer"]}` shape as mock answers. Practice content is separated from scored mock content at the database level, so checking an answer cannot expose a mock-exam answer key. Practice checks are formative and do not affect band history.
 
-## Study planning
+## Learning tools and content
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET / PUT | `/api/v1/attempts/{attempt_id}/workspace` | Read/save owned attempt flags, notes and passage highlights; writes require an active attempt |
+| GET | `/api/v1/me/mistakes` | Latest 200 distinct missed questions from practice and scored mocks, with retry resolution state |
+| POST | `/api/v1/me/mistakes/{question_id}/retry` | Check `{"values":["answer"]}` for a question previously missed by this student |
+| GET / PUT | `/api/v1/me/reminder` | Read/update opt-in Telegram reminder preferences: enabled, local_time (`HH:MM`), timezone (IANA name) |
+| GET / POST | `/api/v1/admin/content` | List drafts/create draft (admin role required) |
+| PUT | `/api/v1/admin/content/{draft_id}` | Save edits to a draft (admin role required) |
+| POST | `/api/v1/admin/content/{draft_id}/publish` | Validate and publish an immutable version; archive the prior published version |
+
+Reminders default to disabled. The bot checks every minute, claims at most one delivery per local day, and links to `/#plan`. Claims prevent duplicate delivery across workers. Delivery is best effort: a transport failure after claiming can skip that day's reminder. No reminder is sent without opt-in and a linked Telegram identity.
+
+Content supports multiple sections, options, accepted answers, explanations, HTTPS audio URLs and explicit mock band thresholds. Listening transcripts remain editor-only when published from the studio. Seeded practice recordings use synthetic narration of original scripts, labelled in the section instructions. The library is formative practice, not official IELTS exam material.
+
+## Study planning endpoints
 
 | Method | Path | Purpose |
 | --- | --- | --- |

@@ -75,6 +75,7 @@ func main() {
 	defer stop()
 	if bot != nil {
 		go bot.Run(ctx)
+		go bot.RunReminders(ctx, pool)
 	} else {
 		logger.Info("Telegram bot disabled")
 	}

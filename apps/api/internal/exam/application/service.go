@@ -21,6 +21,7 @@ var questionTypes = map[string]struct{}{
 }
 
 type Repository interface {
+	LearningRepository
 	ListExams(ctx context.Context) ([]ExamSummary, error)
 	GetExam(ctx context.Context, examID string) (Exam, error)
 	StartAttempt(ctx context.Context, userID, versionID string) (Attempt, error)

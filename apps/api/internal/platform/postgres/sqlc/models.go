@@ -441,10 +441,24 @@ type AttemptAnswer struct {
 	SavedAt       pgtype.Timestamptz `json:"saved_at"`
 }
 
+type AttemptWorkspace struct {
+	AttemptID pgtype.UUID        `json:"attempt_id"`
+	Data      []byte             `json:"data"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type BandConversion struct {
 	ExamVersionID   pgtype.UUID    `json:"exam_version_id"`
 	MinimumRawScore pgtype.Numeric `json:"minimum_raw_score"`
 	Band            pgtype.Numeric `json:"band"`
+}
+
+type ContentDraft struct {
+	ID        pgtype.UUID        `json:"id"`
+	ExamID    pgtype.UUID        `json:"exam_id"`
+	AuthorID  pgtype.UUID        `json:"author_id"`
+	Data      []byte             `json:"data"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Exam struct {
@@ -479,6 +493,15 @@ type ExamVersion struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	Purpose         ExamPurpose        `json:"purpose"`
+}
+
+type MistakeRetry struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	QuestionID  pgtype.UUID        `json:"question_id"`
+	Answer      []byte             `json:"answer"`
+	IsCorrect   bool               `json:"is_correct"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
 }
 
 type PasswordCredential struct {
@@ -542,6 +565,15 @@ type StudyEvent struct {
 	EventType  StudyEventType     `json:"event_type"`
 	AttemptID  pgtype.UUID        `json:"attempt_id"`
 	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
+}
+
+type StudyReminder struct {
+	UserID       pgtype.UUID        `json:"user_id"`
+	Enabled      bool               `json:"enabled"`
+	LocalTime    string             `json:"local_time"`
+	Timezone     string             `json:"timezone"`
+	LastSentDate pgtype.Date        `json:"last_sent_date"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type User struct {

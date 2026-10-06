@@ -23,6 +23,7 @@ func New(service *application.Service, auth *identityhttp.Handler, logger *slog.
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	h.registerLearning(mux)
 	handle := func(pattern string, handler http.HandlerFunc) {
 		mux.Handle(pattern, h.auth.RequireUser(handler))
 	}

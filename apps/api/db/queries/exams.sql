@@ -81,7 +81,7 @@ WHERE ev.status = 'published'
   AND e.archived_at IS NULL
   AND (sqlc.arg(skill)::text = '' OR ev.skill::text = sqlc.arg(skill)::text)
   AND (sqlc.arg(question_type)::text = '' OR q.type::text = sqlc.arg(question_type)::text)
-ORDER BY ev.published_at DESC, es.position, q.position
+ORDER BY random()
 LIMIT sqlc.arg(result_limit);
 
 -- name: GetPracticeAnswerKey :many

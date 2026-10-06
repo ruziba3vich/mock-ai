@@ -11,14 +11,24 @@ import (
 )
 
 type Querier interface {
+	ArchiveContentVersions(ctx context.Context, examID pgtype.UUID) error
 	AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error
+	ClaimReminders(ctx context.Context) ([]ClaimRemindersRow, error)
 	CompleteAttempt(ctx context.Context, arg CompleteAttemptParams) (Attempt, error)
 	CreateAttempt(ctx context.Context, arg CreateAttemptParams) (Attempt, error)
+	CreateContentAnswer(ctx context.Context, arg CreateContentAnswerParams) error
+	CreateContentBand(ctx context.Context, arg CreateContentBandParams) error
+	CreateContentDraft(ctx context.Context, arg CreateContentDraftParams) (pgtype.UUID, error)
+	CreateContentExam(ctx context.Context, arg CreateContentExamParams) (pgtype.UUID, error)
+	CreateContentOption(ctx context.Context, arg CreateContentOptionParams) error
+	CreateContentQuestion(ctx context.Context, arg CreateContentQuestionParams) (pgtype.UUID, error)
+	CreateContentSection(ctx context.Context, arg CreateContentSectionParams) (pgtype.UUID, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (UserIdentity, error)
 	CreatePasswordCredential(ctx context.Context, arg CreatePasswordCredentialParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateVerifiedUser(ctx context.Context, arg CreateVerifiedUserParams) (User, error)
+	DisableReminder(ctx context.Context, userID pgtype.UUID) error
 	EnsureStudentProfile(ctx context.Context, userID pgtype.UUID) error
 	ExpireStaleAttemptsForExam(ctx context.Context, arg ExpireStaleAttemptsForExamParams) error
 	GetActiveAttempt(ctx context.Context, arg GetActiveAttemptParams) (Attempt, error)
@@ -26,10 +36,12 @@ type Querier interface {
 	GetAttemptForUpdate(ctx context.Context, arg GetAttemptForUpdateParams) (Attempt, error)
 	GetAttemptReview(ctx context.Context, arg GetAttemptReviewParams) ([]GetAttemptReviewRow, error)
 	GetBandForRawScore(ctx context.Context, arg GetBandForRawScoreParams) (pgtype.Numeric, error)
+	GetOwnedMistakeKey(ctx context.Context, arg GetOwnedMistakeKeyParams) ([]GetOwnedMistakeKeyRow, error)
 	GetPasswordLogin(ctx context.Context, lower string) (GetPasswordLoginRow, error)
 	GetPracticeAnswerKey(ctx context.Context, id pgtype.UUID) ([]GetPracticeAnswerKeyRow, error)
 	GetPublishedExam(ctx context.Context, id pgtype.UUID) (GetPublishedExamRow, error)
 	GetQuestionTypePerformance(ctx context.Context, studentID pgtype.UUID) ([]GetQuestionTypePerformanceRow, error)
+	GetReminder(ctx context.Context, id pgtype.UUID) ([]byte, error)
 	GetStudentProfile(ctx context.Context, userID pgtype.UUID) (StudentProfile, error)
 	GetStudentProgress(ctx context.Context, userID pgtype.UUID) ([]GetStudentProgressRow, error)
 	GetStudyActivityDays(ctx context.Context, studentID pgtype.UUID) ([]pgtype.Date, error)
@@ -39,22 +51,32 @@ type Querier interface {
 	GetUserByIdentity(ctx context.Context, arg GetUserByIdentityParams) (User, error)
 	GetUserBySession(ctx context.Context, tokenHash []byte) (User, error)
 	GetWeeklyStudyActivity(ctx context.Context, studentID pgtype.UUID) ([]GetWeeklyStudyActivityRow, error)
+	GetWorkspace(ctx context.Context, arg GetWorkspaceParams) ([]byte, error)
 	ListAttemptAnswers(ctx context.Context, attemptID pgtype.UUID) ([]AttemptAnswer, error)
 	ListAttemptScoringRows(ctx context.Context, id pgtype.UUID) ([]ListAttemptScoringRowsRow, error)
+	ListContentDrafts(ctx context.Context) ([]ListContentDraftsRow, error)
 	ListExamSections(ctx context.Context, examVersionID pgtype.UUID) ([]ListExamSectionsRow, error)
+	ListMistakes(ctx context.Context, userID pgtype.UUID) ([]ListMistakesRow, error)
 	ListPracticeQuestions(ctx context.Context, arg ListPracticeQuestionsParams) ([]ListPracticeQuestionsRow, error)
 	ListPublishedExams(ctx context.Context) ([]ListPublishedExamsRow, error)
 	ListQuestionOptions(ctx context.Context, questionID pgtype.UUID) ([]QuestionOption, error)
 	ListSectionQuestions(ctx context.Context, sectionID pgtype.UUID) ([]ListSectionQuestionsRow, error)
 	ListStudentAttempts(ctx context.Context, arg ListStudentAttemptsParams) ([]ListStudentAttemptsRow, error)
 	ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]UserRole, error)
+	LockContentDraft(ctx context.Context, id pgtype.UUID) (ContentDraft, error)
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error)
+	PublishContentVersion(ctx context.Context, arg PublishContentVersionParams) (pgtype.UUID, error)
 	RecordAttemptReview(ctx context.Context, arg RecordAttemptReviewParams) (pgtype.UUID, error)
+	RecordMistakeRetry(ctx context.Context, arg RecordMistakeRetryParams) error
 	RecordPracticeAnswer(ctx context.Context, arg RecordPracticeAnswerParams) error
 	RevokeSession(ctx context.Context, tokenHash []byte) error
 	SaveAttemptAnswer(ctx context.Context, arg SaveAttemptAnswerParams) (AttemptAnswer, error)
+	SaveReminder(ctx context.Context, arg SaveReminderParams) error
+	SaveWorkspace(ctx context.Context, arg SaveWorkspaceParams) ([]byte, error)
 	SetAttemptAnswerScore(ctx context.Context, arg SetAttemptAnswerScoreParams) error
+	SetDraftExam(ctx context.Context, arg SetDraftExamParams) error
 	TouchSession(ctx context.Context, tokenHash []byte) error
+	UpdateContentDraft(ctx context.Context, arg UpdateContentDraftParams) (pgtype.UUID, error)
 	UpdateExternalProfile(ctx context.Context, arg UpdateExternalProfileParams) (User, error)
 	UpdateStudentProfile(ctx context.Context, arg UpdateStudentProfileParams) (StudentProfile, error)
 }

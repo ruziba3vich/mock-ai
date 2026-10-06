@@ -179,7 +179,7 @@ WHERE ev.status = 'published'
   AND e.archived_at IS NULL
   AND ($1::text = '' OR ev.skill::text = $1::text)
   AND ($2::text = '' OR q.type::text = $2::text)
-ORDER BY ev.published_at DESC, es.position, q.position
+ORDER BY random()
 LIMIT $3
 `
 
