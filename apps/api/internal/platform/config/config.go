@@ -9,37 +9,41 @@ import (
 )
 
 type Config struct {
-	Environment        string
-	HTTPAddr           string
-	DatabaseURL        string
-	WebOrigin          string
-	AdminOrigin        string
-	AIKeyEncryptionKey string
-	GeminiWritingModel string
-	TelegramBotToken   string
-	TelegramMiniAppURL string
-	GoogleClientID     string
-	GoogleClientSecret string
-	GoogleRedirectURL  string
-	SessionSecret      string
-	SessionTTL         time.Duration
-	SecureCookie       bool
+	Environment              string
+	HTTPAddr                 string
+	DatabaseURL              string
+	WebOrigin                string
+	AdminOrigin              string
+	AIKeyEncryptionKey       string
+	GeminiWritingModel       string
+	GeminiSpeakingModel      string
+	GeminiSpeakingVoiceModel string
+	TelegramBotToken         string
+	TelegramMiniAppURL       string
+	GoogleClientID           string
+	GoogleClientSecret       string
+	GoogleRedirectURL        string
+	SessionSecret            string
+	SessionTTL               time.Duration
+	SecureCookie             bool
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		Environment:        envOr("APP_ENV", "development"),
-		HTTPAddr:           envOr("HTTP_ADDR", ":8080"),
-		DatabaseURL:        os.Getenv("DATABASE_URL"),
-		AIKeyEncryptionKey: os.Getenv("AI_KEY_ENCRYPTION_KEY"),
-		GeminiWritingModel: envOr("GEMINI_WRITING_MODEL", "gemini-3.7-flash"),
-		WebOrigin:          envOr("WEB_ORIGIN", "http://localhost:5173"),
-		TelegramBotToken:   os.Getenv("TELEGRAM_BOT_TOKEN"),
-		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-		GoogleRedirectURL:  envOr("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/v1/auth/google/callback"),
-		SessionSecret:      os.Getenv("SESSION_SECRET"),
-		SessionTTL:         30 * 24 * time.Hour,
+		Environment:              envOr("APP_ENV", "development"),
+		HTTPAddr:                 envOr("HTTP_ADDR", ":8080"),
+		DatabaseURL:              os.Getenv("DATABASE_URL"),
+		AIKeyEncryptionKey:       os.Getenv("AI_KEY_ENCRYPTION_KEY"),
+		GeminiWritingModel:       envOr("GEMINI_WRITING_MODEL", "gemini-3.7-flash"),
+		GeminiSpeakingModel:      envOr("GEMINI_SPEAKING_MODEL", "gemini-3.7-flash"),
+		GeminiSpeakingVoiceModel: envOr("GEMINI_SPEAKING_VOICE_MODEL", "gemini-3.8-flash-tts"),
+		WebOrigin:                envOr("WEB_ORIGIN", "http://localhost:5173"),
+		TelegramBotToken:         os.Getenv("TELEGRAM_BOT_TOKEN"),
+		GoogleClientID:           os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret:       os.Getenv("GOOGLE_CLIENT_SECRET"),
+		GoogleRedirectURL:        envOr("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/v1/auth/google/callback"),
+		SessionSecret:            os.Getenv("SESSION_SECRET"),
+		SessionTTL:               30 * 24 * time.Hour,
 	}
 	cfg.TelegramMiniAppURL = envOr("TELEGRAM_MINI_APP_URL", cfg.WebOrigin)
 	if cfg.AIKeyEncryptionKey != "" {

@@ -605,6 +605,49 @@ type Session struct {
 	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
 }
 
+type SpeakingRequest struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Kind      string             `json:"kind"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type SpeakingSession struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Examiner       []byte             `json:"examiner"`
+	Topic          string             `json:"topic"`
+	Status         string             `json:"status"`
+	Report         []byte             `json:"report"`
+	Model          string             `json:"model"`
+	RubricVersion  string             `json:"rubric_version"`
+	RunID          pgtype.UUID        `json:"run_id"`
+	LeaseUntil     pgtype.Timestamptz `json:"lease_until"`
+	ErrorCode      string             `json:"error_code"`
+	ConsentAt      pgtype.Timestamptz `json:"consent_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	AudioExpiresAt pgtype.Timestamptz `json:"audio_expires_at"`
+}
+
+type SpeakingTurn struct {
+	SessionID       pgtype.UUID        `json:"session_id"`
+	Position        int32              `json:"position"`
+	Part            int32              `json:"part"`
+	Prompt          string             `json:"prompt"`
+	Seconds         int32              `json:"seconds"`
+	PrepSeconds     int32              `json:"prep_seconds"`
+	VoiceStatus     string             `json:"voice_status"`
+	VoiceAttempts   int32              `json:"voice_attempts"`
+	VoiceRunID      pgtype.UUID        `json:"voice_run_id"`
+	VoiceLeaseUntil pgtype.Timestamptz `json:"voice_lease_until"`
+	ExaminerAudio   []byte             `json:"examiner_audio"`
+	Recording       []byte             `json:"recording"`
+	DurationMs      int32              `json:"duration_ms"`
+	Answered        bool               `json:"answered"`
+	Skipped         bool               `json:"skipped"`
+}
+
 type StudentProfile struct {
 	UserID           pgtype.UUID        `json:"user_id"`
 	TargetBand       pgtype.Numeric     `json:"target_band"`

@@ -124,6 +124,8 @@ jobs:
           ADMIN_ORIGIN: ${{ vars.APP_ADMIN_ORIGIN || 'https://mockai.admin.chessinsight.uz' }}
           AI_KEY_ENCRYPTION_KEY: ${{ secrets.APP_AI_KEY_ENCRYPTION_KEY }}
           GEMINI_WRITING_MODEL: ${{ vars.GEMINI_WRITING_MODEL || 'gemini-3.7-flash' }}
+          GEMINI_SPEAKING_MODEL: ${{ vars.GEMINI_SPEAKING_MODEL || 'gemini-3.7-flash' }}
+          GEMINI_SPEAKING_VOICE_MODEL: ${{ vars.GEMINI_SPEAKING_VOICE_MODEL || 'gemini-3.8-flash-tts' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_MINI_APP_URL: ${{ secrets.TELEGRAM_MINI_APP_URL }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
@@ -149,6 +151,8 @@ jobs:
             "ADMIN_ORIGIN=$ADMIN_ORIGIN" \
             "AI_KEY_ENCRYPTION_KEY=$AI_KEY_ENCRYPTION_KEY" \
             "GEMINI_WRITING_MODEL=$GEMINI_WRITING_MODEL" \
+            "GEMINI_SPEAKING_MODEL=$GEMINI_SPEAKING_MODEL" \
+            "GEMINI_SPEAKING_VOICE_MODEL=$GEMINI_SPEAKING_VOICE_MODEL" \
             "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" \
             "TELEGRAM_MINI_APP_URL=$TELEGRAM_MINI_APP_URL" \
             "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" \

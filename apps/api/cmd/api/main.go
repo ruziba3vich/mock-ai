@@ -25,6 +25,10 @@ import (
 	"github.com/own/mock-ai/apps/api/internal/platform/config"
 	"github.com/own/mock-ai/apps/api/internal/platform/httpserver"
 	db "github.com/own/mock-ai/apps/api/internal/platform/postgres/sqlc"
+	speakingapp "github.com/own/mock-ai/apps/api/internal/speaking/application"
+	speakinggemini "github.com/own/mock-ai/apps/api/internal/speaking/gemini"
+	speakinghttp "github.com/own/mock-ai/apps/api/internal/speaking/httpapi"
+	speakingpg "github.com/own/mock-ai/apps/api/internal/speaking/postgres"
 	"github.com/own/mock-ai/apps/api/internal/telegrambot"
 	writingapp "github.com/own/mock-ai/apps/api/internal/writing/application"
 	"github.com/own/mock-ai/apps/api/internal/writing/gemini"
@@ -71,6 +75,12 @@ func main() {
 	}
 	writingService := writingapp.New(writingpg.New(pool), evaluator, cfg.GeminiWritingModel)
 	writingHandler := writinghttp.New(writingService, identityHandler, cfg.WebOrigin)
+	var speakingProvider speakingapp.Provider
+	if cfg.AIKeyEncryptionKey != "" {
+		speakingProvider = speakinggemini.New(db.New(pool), cfg.AIKeyEncryptionKey, cfg.GeminiSpeakingVoiceModel)
+	}
+	speakingService := &speakingapp.Service{Repo: speakingpg.New(pool, cfg.AIKeyEncryptionKey), Provider: speakingProvider, Model: cfg.GeminiSpeakingModel, Log: logger}
+	speakingHandler := speakinghttp.New(speakingService, identityHandler, cfg.WebOrigin)
 	bot, err := telegrambot.New(cfg.TelegramBotToken, cfg.TelegramMiniAppURL, identityService, logger)
 	if err != nil {
 		logger.Error("initialize Telegram bot", "error", err)
@@ -79,7 +89,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpserver.New(logger, cfg.WebOrigin, identityHandler, examHandler, adminHandler, writingHandler),
+		Handler:           httpserver.New(logger, cfg.WebOrigin, identityHandler, examHandler, adminHandler, writingHandler, speakingHandler),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -89,6 +99,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go writingService.Run(ctx)
+	speakingService.Run(ctx)
 	if bot != nil {
 		go bot.Run(ctx)
 		go bot.RunReminders(ctx, pool)

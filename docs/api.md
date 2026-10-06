@@ -152,3 +152,9 @@ Only the task prompt and essay are sent to Google Gemini, after explicit consent
 No user identifier, email, Telegram profile, secret or other student's work enters
 the prompt. AI output is rendered as text, never executable HTML. This does not
 provide plagiarism detection, fact checking or an official examiner assessment.
+
+## Speaking
+
+Recorded three-part interviews, regional examiner voices, private audio playback,
+and AI Speaking reports are available under `/api/v1/speaking`. See
+[Speaking HTTP contract, retention and verification](speaking.md).

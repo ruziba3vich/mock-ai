@@ -1,11 +1,11 @@
 # Mock AI
 
-An IELTS mock-exam platform for Telegram Mini Apps and desktop browsers. The first release covers Listening and Reading. Writing, Speaking, and the AI teacher are intentionally deferred.
+An IELTS practice platform for Telegram Mini Apps and desktop browsers. Listening and Reading mocks, Writing Task 2 feedback, and recorded three-part Speaking interviews are implemented. The conversational AI teacher remains deferred.
 
 ## Repository layout
 
 - `apps/api` — Go API, domain modules, migrations, and sqlc queries
-- `apps/web` — responsive React client shared by Telegram and desktop
+- Student/admin frontend: separate `mock-ai-web` repository (local sibling directory)
 - `docs` — architecture and MVP decisions
 
 ## Local development

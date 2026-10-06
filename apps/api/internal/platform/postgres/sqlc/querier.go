@@ -11,11 +11,15 @@ import (
 )
 
 type Querier interface {
+	AnswerSpeaking(ctx context.Context, arg AnswerSpeakingParams) (int64, error)
 	ArchiveContentVersions(ctx context.Context, examID pgtype.UUID) error
 	AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error
 	ClaimReminders(ctx context.Context) ([]ClaimRemindersRow, error)
+	ClaimSpeakingReport(ctx context.Context) (SpeakingSession, error)
+	ClaimSpeakingVoice(ctx context.Context) (ClaimSpeakingVoiceRow, error)
 	ClaimWriting(ctx context.Context) (WritingSubmission, error)
 	CompleteAttempt(ctx context.Context, arg CompleteAttemptParams) (Attempt, error)
+	CountSpeakingRequests(ctx context.Context, arg CountSpeakingRequestsParams) (int32, error)
 	CountWritingToday(ctx context.Context, userID pgtype.UUID) (int32, error)
 	CreateAdmin(ctx context.Context, arg CreateAdminParams) (pgtype.UUID, error)
 	CreateAdminSession(ctx context.Context, arg CreateAdminSessionParams) error
@@ -30,15 +34,23 @@ type Querier interface {
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (UserIdentity, error)
 	CreatePasswordCredential(ctx context.Context, arg CreatePasswordCredentialParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateSpeaking(ctx context.Context, arg CreateSpeakingParams) (SpeakingSession, error)
+	CreateSpeakingTurn(ctx context.Context, arg CreateSpeakingTurnParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateVerifiedUser(ctx context.Context, arg CreateVerifiedUserParams) (User, error)
 	CreateWriting(ctx context.Context, arg CreateWritingParams) (WritingSubmission, error)
 	DeleteAdminSession(ctx context.Context, tokenHash string) error
+	DeleteSpeaking(ctx context.Context, arg DeleteSpeakingParams) (int64, error)
 	DeleteWriting(ctx context.Context, arg DeleteWritingParams) (int64, error)
 	DisableReminder(ctx context.Context, userID pgtype.UUID) error
 	EnsureStudentProfile(ctx context.Context, userID pgtype.UUID) error
+	ExpireSpeakingReports(ctx context.Context) error
+	ExpireSpeakingSessions(ctx context.Context) error
+	ExpireSpeakingVoices(ctx context.Context) error
 	ExpireStaleAttemptsForExam(ctx context.Context, arg ExpireStaleAttemptsForExamParams) error
 	ExpireWritingJobs(ctx context.Context) error
+	FinishSpeakingReport(ctx context.Context, arg FinishSpeakingReportParams) (int64, error)
+	FinishSpeakingVoice(ctx context.Context, arg FinishSpeakingVoiceParams) (int64, error)
 	FinishWriting(ctx context.Context, arg FinishWritingParams) (int64, error)
 	GetActiveAttempt(ctx context.Context, arg GetActiveAttemptParams) (Attempt, error)
 	GetAdminSession(ctx context.Context, tokenHash string) (GetAdminSessionRow, error)
@@ -56,6 +68,7 @@ type Querier interface {
 	GetPublishedExam(ctx context.Context, id pgtype.UUID) (GetPublishedExamRow, error)
 	GetQuestionTypePerformance(ctx context.Context, studentID pgtype.UUID) ([]GetQuestionTypePerformanceRow, error)
 	GetReminder(ctx context.Context, id pgtype.UUID) ([]byte, error)
+	GetSpeaking(ctx context.Context, arg GetSpeakingParams) (SpeakingSession, error)
 	GetStudentProfile(ctx context.Context, userID pgtype.UUID) (StudentProfile, error)
 	GetStudentProgress(ctx context.Context, userID pgtype.UUID) ([]GetStudentProgressRow, error)
 	GetStudyActivityDays(ctx context.Context, studentID pgtype.UUID) ([]pgtype.Date, error)
@@ -77,17 +90,24 @@ type Querier interface {
 	ListPublishedExams(ctx context.Context) ([]ListPublishedExamsRow, error)
 	ListQuestionOptions(ctx context.Context, questionID pgtype.UUID) ([]QuestionOption, error)
 	ListSectionQuestions(ctx context.Context, sectionID pgtype.UUID) ([]ListSectionQuestionsRow, error)
+	ListSpeaking(ctx context.Context, userID pgtype.UUID) ([]SpeakingSession, error)
 	ListStudentAttempts(ctx context.Context, arg ListStudentAttemptsParams) ([]ListStudentAttemptsRow, error)
 	ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]UserRole, error)
 	ListWriting(ctx context.Context, userID pgtype.UUID) ([]WritingSubmission, error)
 	LockContentDraft(ctx context.Context, id pgtype.UUID) (ContentDraft, error)
+	LockSpeaking(ctx context.Context, arg LockSpeakingParams) (SpeakingSession, error)
+	LockSpeakingUser(ctx context.Context, userID string) error
 	LockWritingUser(ctx context.Context, userID string) error
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error)
 	PublishContentVersion(ctx context.Context, arg PublishContentVersionParams) (pgtype.UUID, error)
+	PurgeSpeakingAudio(ctx context.Context) error
+	QueueSpeakingReport(ctx context.Context, id pgtype.UUID) (SpeakingSession, error)
+	QueueSpeakingVoice(ctx context.Context, arg QueueSpeakingVoiceParams) (int64, error)
 	QueueWriting(ctx context.Context, arg QueueWritingParams) (WritingSubmission, error)
 	RecordAttemptReview(ctx context.Context, arg RecordAttemptReviewParams) (pgtype.UUID, error)
 	RecordMistakeRetry(ctx context.Context, arg RecordMistakeRetryParams) error
 	RecordPracticeAnswer(ctx context.Context, arg RecordPracticeAnswerParams) error
+	RecordSpeakingRequest(ctx context.Context, arg RecordSpeakingRequestParams) error
 	RecordWritingRequest(ctx context.Context, arg RecordWritingRequestParams) error
 	ReserveAdminLogin(ctx context.Context, email string) (ReserveAdminLoginRow, error)
 	ResetAdminLogin(ctx context.Context, id pgtype.UUID) error
@@ -99,6 +119,9 @@ type Querier interface {
 	SaveWriting(ctx context.Context, arg SaveWritingParams) (WritingSubmission, error)
 	SetAttemptAnswerScore(ctx context.Context, arg SetAttemptAnswerScoreParams) error
 	SetDraftExam(ctx context.Context, arg SetDraftExamParams) error
+	SpeakingAudio(ctx context.Context, arg SpeakingAudioParams) (SpeakingAudioRow, error)
+	SpeakingRecordings(ctx context.Context, sessionID pgtype.UUID) ([]SpeakingRecordingsRow, error)
+	SpeakingTurns(ctx context.Context, sessionID pgtype.UUID) ([]SpeakingTurnsRow, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	UpdateContentDraft(ctx context.Context, arg UpdateContentDraftParams) (pgtype.UUID, error)
 	UpdateExternalProfile(ctx context.Context, arg UpdateExternalProfileParams) (User, error)

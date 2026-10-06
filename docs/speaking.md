@@ -1,0 +1,47 @@
+# Speaking interviews
+
+Speaking is a guided recorded practice interview, not a live/adaptive conversation or an official IELTS result. Two original topic sets cover 6 introductory turns, a 60-second preparation / 120-second long turn, and 4 discussion turns. The server randomly assigns one of six country regions and a male/female catalog voice at creation; it preserves that voice throughout the session. Regions: Australia, Canada, United Kingdom, United States, Ireland, New Zealand. A region does not represent every accent in that country.
+
+## Configuration and deployment
+
+Migration `000011_speaking` adds sessions, turns, and deletion-resistant daily usage records. All SQL is managed through sqlc. CI runs migrations through the existing migration executable. No changes to any other database or published database port are needed.
+
+- `AI_KEY_ENCRYPTION_KEY`: existing 32-byte hex secret; never commit it or change it without re-encrypting stored keys AND recordings.
+- `GEMINI_SPEAKING_MODEL`: default `gemini-3.7-flash`, evaluates actual audio.
+- `GEMINI_SPEAKING_VOICE_MODEL`: default `gemini-3.8-flash-tts`, uses Interactions API and verified regional voice IDs.
+- Reuses the encrypted Gemini key vault from Writing. GitHub Actions variables set the models; the existing Actions secret supplies the encryption key. No browser API key.
+
+Recording requires HTTPS (localhost permitted), a supported MediaRecorder/AudioContext browser, and microphone permission. Telegram webview support depends on its client version; the UI explains how to open a supported browser if recording is unavailable. Use headphones to avoid examiner playback reaching the microphone.
+
+## HTTP contract
+
+All routes require the student session cookie; mutations require an exact student-app Origin. Responses and audio use private/no-store caching. Audio access always checks ownership and expiry.
+
+| Method | `/api/v1/speaking` suffix | Result |
+|---|---|---|
+| GET | `/settings` | enabled, countries, daily limit, retention days |
+| GET | `/sessions` | latest 30 sessions |
+| POST | `/sessions` | `{ "consent": true }`; assigns examiner, queues first question |
+| GET / DELETE | `/sessions/{id}` | interview detail / delete interview and all audio |
+| GET | `/sessions/{id}/turns/{position}/examiner` | generated question WAV |
+| GET | `/sessions/{id}/turns/{position}/recording` | decrypted student WAV |
+| PUT | `/sessions/{id}/turns/{position}/answer` | raw canonical WAV, saves current answer and queues next voice |
+| POST | `/sessions/{id}/turns/{position}/skip` | explicitly skips current answer |
+| POST | `/sessions/{id}/turns/{position}/voice/retry` | retries failed current question, max 3 total attempts |
+| POST | `/sessions/{id}/submit` | queues report after all 11 turns are answered/skipped |
+
+Student WAV format: 44-byte PCM header, 16 kHz mono, signed 16-bit little endian, 1 second minimum, per-turn maximum enforced server-side (2 seconds transport tolerance), 4.2 MB hard body limit. The browser transcodes its native recording; the server checks format, length, duration and non-silent signal. A signal check does not guarantee speech; the evaluator must withhold scores for insufficient intelligible speech.
+
+## Persistence, privacy and failure recovery
+
+Recordings are AES-256-GCM encrypted in PostgreSQL. Recordings and generated question audio expire after 30 days; cleanup runs even if evaluation is disabled. Reports/transcripts remain until student deletion. Users consent before their recordings are sent to Google. Larger combined recordings use Gemini Files and request deletion after evaluation; provider-side retention/data policies still apply. Do not claim zero retention.
+
+One open interview per student, three new interviews/day and five evaluation requests/day (UTC). Deleting an interview does not reset its usage. Durable DB queues use leases, run IDs and guarded completion; retries cannot overwrite a newer run, and deletion cannot be undone by an in-flight worker. Failed/interrupted reports are retryable. Saved answers resume after refresh; unsaved recordings cannot be recovered after leaving. Session deletion cascades to turns.
+
+The report includes four criterion estimates (fluency/coherence, vocabulary, grammar, pronunciation), overall Speaking estimate computed server-side, transcripts, strengths, answer development feedback, timestamped issues and practice steps. Pronunciation is assessed from sound and intelligibility, never inferred solely from a transcript or penalized for a non-native accent. Invalid quotes, timestamps, criterion keys and band values reject the report. Under 60 seconds of audio, fewer than three answers, or missing any part suppresses all band estimates. No four-skill overall IELTS band is invented.
+
+## Verification
+
+`go test ./...` covers waveform/report validation and provider contracts. `MOCKAI_INTEGRATION=1 DATABASE_URL=... go test ./...` requires a fresh disposable `mock_ai_learning_test` database; it tests authenticated HTTP, ownership, CSRF, encryption/decryption, ordering, worker execution, computed scores, expiry, usage limits, and migration rollback/reapply. Integration scoring uses a deterministic provider double; it does not validate AI assessment accuracy.
+
+Frontend: `npm test`, `npm run build`, `npm run test:e2e`. The normal Playwright suite checks mobile Speaking discovery/consent with the real backend. Opt-in `SPEAKING_LIVE_E2E=1 SPEAKING_AUDIO_FIXTURE=/absolute/speech.wav npm run test:e2e -- e2e/speaking.spec.ts` needs an isolated real backend configured with Gemini. It records synthesized speech through Chromium's actual MediaRecorder, saves all 11 answers, resumes, obtains a real provider report, plays saved audio and deletes the interview. It incurs provider usage; synthetic speech tests transport and UI, not human-accent scoring validity. Human/examiner calibration and physical Telegram iOS/Android permission checks remain separate release checks.

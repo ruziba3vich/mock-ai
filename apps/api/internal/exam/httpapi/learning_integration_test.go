@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/own/mock-ai/apps/api/internal/platform/keyvault"
+	speakingapp "github.com/own/mock-ai/apps/api/internal/speaking/application"
+	speakinghttp "github.com/own/mock-ai/apps/api/internal/speaking/httpapi"
+	speakingpg "github.com/own/mock-ai/apps/api/internal/speaking/postgres"
 	writingapp "github.com/own/mock-ai/apps/api/internal/writing/application"
 	writinghttp "github.com/own/mock-ai/apps/api/internal/writing/httpapi"
 	writingpg "github.com/own/mock-ai/apps/api/internal/writing/postgres"
@@ -78,7 +81,9 @@ func TestLearningIntegration(t *testing.T) {
 	adminService := adminapp.New(adminpg.New(pool))
 	adminHandler := adminhttp.New(adminService, "http://localhost", false)
 	writingService := writingapp.New(writingpg.New(pool), writingTestEvaluator{}, "gemini-3.7-flash")
-	handler := httpserver.New(logger, "http://localhost", authHandler, examhttp.New(service, authHandler, logger, adminHandler), adminHandler, writinghttp.New(writingService, authHandler, "http://localhost"))
+	speakingRepo := speakingpg.New(pool, strings.Repeat("ab", 32))
+	speakingService := &speakingapp.Service{Repo: speakingRepo, Provider: speakingTestProvider{}, Model: "test-audio-model", Log: logger}
+	handler := httpserver.New(logger, "http://localhost", authHandler, examhttp.New(service, authHandler, logger, adminHandler), adminHandler, writinghttp.New(writingService, authHandler, "http://localhost"), speakinghttp.New(speakingService, authHandler, "http://localhost"))
 	request := func(method, path string, payload any, cookie *http.Cookie, status int) map[string]json.RawMessage {
 		t.Helper()
 		b, _ := json.Marshal(payload)
@@ -436,12 +441,13 @@ func TestLearningIntegration(t *testing.T) {
 	request("GET", wpath, nil, cookie, 404)
 	request("POST", "/api/v1/writing/submissions/"+copy.ID+"/evaluate", map[string]any{"revision": 1, "consent": true}, cookie, 429)
 	t.Log("writing ownership, consent, revision locking, concurrent idempotency, durable worker report, computed score, revisions and deletion-resistant quota passed")
+	testSpeaking(t, handler, speakingService, pool, cookie, other)
 	// Only disposable integration content is removed. Production downgrades refuse
 	// to erase attribution while admin-authored content still exists.
 	if _, e = pool.Exec(context.Background(), "WITH removed AS (DELETE FROM content_drafts WHERE id=$1 RETURNING exam_id) DELETE FROM exams WHERE id IN (SELECT exam_id FROM removed)", draftID); e != nil {
 		t.Fatal(e)
 	}
-	if e = migration.Steps(-6); e != nil {
+	if e = migration.Steps(-7); e != nil {
 		t.Fatal("rollback new migrations:", e)
 	}
 	if e = migration.Up(); e != nil {
