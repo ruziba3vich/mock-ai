@@ -14,7 +14,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/mock-ai-migrate ./cmd/migrate && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags="-s -w" -o /out/mock-ai-admin ./cmd/admin
+    go build -trimpath -ldflags="-s -w" -o /out/mock-ai-admin ./cmd/admin && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /out/mock-ai-ai-keys ./cmd/ai-keys
 
 FROM alpine:3.22
 
@@ -25,6 +27,7 @@ WORKDIR /app
 COPY --from=builder /out/mock-ai-api /app/mock-ai-api
 COPY --from=builder /out/mock-ai-migrate /app/mock-ai-migrate
 COPY --from=builder /out/mock-ai-admin /app/mock-ai-admin
+COPY --from=builder /out/mock-ai-ai-keys /app/mock-ai-ai-keys
 
 USER mockai
 EXPOSE 8080

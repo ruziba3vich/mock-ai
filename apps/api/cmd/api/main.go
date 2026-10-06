@@ -24,7 +24,12 @@ import (
 	identitypostgres "github.com/own/mock-ai/apps/api/internal/identity/postgres"
 	"github.com/own/mock-ai/apps/api/internal/platform/config"
 	"github.com/own/mock-ai/apps/api/internal/platform/httpserver"
+	db "github.com/own/mock-ai/apps/api/internal/platform/postgres/sqlc"
 	"github.com/own/mock-ai/apps/api/internal/telegrambot"
+	writingapp "github.com/own/mock-ai/apps/api/internal/writing/application"
+	"github.com/own/mock-ai/apps/api/internal/writing/gemini"
+	writinghttp "github.com/own/mock-ai/apps/api/internal/writing/httpapi"
+	writingpg "github.com/own/mock-ai/apps/api/internal/writing/postgres"
 )
 
 func main() {
@@ -60,6 +65,12 @@ func main() {
 	examService := examapp.NewService(examRepository)
 	adminHandler := adminhttp.New(adminapp.New(adminpg.New(pool)), cfg.AdminOrigin, cfg.SecureCookie)
 	examHandler := examhttp.New(examService, identityHandler, logger, adminHandler)
+	var evaluator writingapp.Evaluator
+	if cfg.AIKeyEncryptionKey != "" {
+		evaluator = gemini.New(db.New(pool), cfg.AIKeyEncryptionKey)
+	}
+	writingService := writingapp.New(writingpg.New(pool), evaluator, cfg.GeminiWritingModel)
+	writingHandler := writinghttp.New(writingService, identityHandler, cfg.WebOrigin)
 	bot, err := telegrambot.New(cfg.TelegramBotToken, cfg.TelegramMiniAppURL, identityService, logger)
 	if err != nil {
 		logger.Error("initialize Telegram bot", "error", err)
@@ -68,7 +79,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpserver.New(logger, cfg.WebOrigin, identityHandler, examHandler, adminHandler),
+		Handler:           httpserver.New(logger, cfg.WebOrigin, identityHandler, examHandler, adminHandler, writingHandler),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -77,6 +88,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go writingService.Run(ctx)
 	if bot != nil {
 		go bot.Run(ctx)
 		go bot.RunReminders(ctx, pool)

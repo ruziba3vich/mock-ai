@@ -14,7 +14,9 @@ type Querier interface {
 	ArchiveContentVersions(ctx context.Context, examID pgtype.UUID) error
 	AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error
 	ClaimReminders(ctx context.Context) ([]ClaimRemindersRow, error)
+	ClaimWriting(ctx context.Context) (WritingSubmission, error)
 	CompleteAttempt(ctx context.Context, arg CompleteAttemptParams) (Attempt, error)
+	CountWritingToday(ctx context.Context, userID pgtype.UUID) (int32, error)
 	CreateAdmin(ctx context.Context, arg CreateAdminParams) (pgtype.UUID, error)
 	CreateAdminSession(ctx context.Context, arg CreateAdminSessionParams) error
 	CreateAttempt(ctx context.Context, arg CreateAttemptParams) (Attempt, error)
@@ -30,10 +32,14 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateVerifiedUser(ctx context.Context, arg CreateVerifiedUserParams) (User, error)
+	CreateWriting(ctx context.Context, arg CreateWritingParams) (WritingSubmission, error)
 	DeleteAdminSession(ctx context.Context, tokenHash string) error
+	DeleteWriting(ctx context.Context, arg DeleteWritingParams) (int64, error)
 	DisableReminder(ctx context.Context, userID pgtype.UUID) error
 	EnsureStudentProfile(ctx context.Context, userID pgtype.UUID) error
 	ExpireStaleAttemptsForExam(ctx context.Context, arg ExpireStaleAttemptsForExamParams) error
+	ExpireWritingJobs(ctx context.Context) error
+	FinishWriting(ctx context.Context, arg FinishWritingParams) (int64, error)
 	GetActiveAttempt(ctx context.Context, arg GetActiveAttemptParams) (Attempt, error)
 	GetAdminSession(ctx context.Context, tokenHash string) (GetAdminSessionRow, error)
 	GetAttempt(ctx context.Context, arg GetAttemptParams) (Attempt, error)
@@ -46,6 +52,7 @@ type Querier interface {
 	GetOwnedMistakeKey(ctx context.Context, arg GetOwnedMistakeKeyParams) ([]GetOwnedMistakeKeyRow, error)
 	GetPasswordLogin(ctx context.Context, lower string) (GetPasswordLoginRow, error)
 	GetPracticeAnswerKey(ctx context.Context, id pgtype.UUID) ([]GetPracticeAnswerKeyRow, error)
+	GetPrimaryAIKey(ctx context.Context) ([]byte, error)
 	GetPublishedExam(ctx context.Context, id pgtype.UUID) (GetPublishedExamRow, error)
 	GetQuestionTypePerformance(ctx context.Context, studentID pgtype.UUID) ([]GetQuestionTypePerformanceRow, error)
 	GetReminder(ctx context.Context, id pgtype.UUID) ([]byte, error)
@@ -59,6 +66,8 @@ type Querier interface {
 	GetUserBySession(ctx context.Context, tokenHash []byte) (User, error)
 	GetWeeklyStudyActivity(ctx context.Context, studentID pgtype.UUID) ([]GetWeeklyStudyActivityRow, error)
 	GetWorkspace(ctx context.Context, arg GetWorkspaceParams) ([]byte, error)
+	GetWriting(ctx context.Context, arg GetWritingParams) (WritingSubmission, error)
+	ImportAIKey(ctx context.Context, arg ImportAIKeyParams) error
 	ListAttemptAnswers(ctx context.Context, attemptID pgtype.UUID) ([]AttemptAnswer, error)
 	ListAttemptScoringRows(ctx context.Context, id pgtype.UUID) ([]ListAttemptScoringRowsRow, error)
 	ListContentDrafts(ctx context.Context) ([]ListContentDraftsRow, error)
@@ -70,12 +79,16 @@ type Querier interface {
 	ListSectionQuestions(ctx context.Context, sectionID pgtype.UUID) ([]ListSectionQuestionsRow, error)
 	ListStudentAttempts(ctx context.Context, arg ListStudentAttemptsParams) ([]ListStudentAttemptsRow, error)
 	ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]UserRole, error)
+	ListWriting(ctx context.Context, userID pgtype.UUID) ([]WritingSubmission, error)
 	LockContentDraft(ctx context.Context, id pgtype.UUID) (ContentDraft, error)
+	LockWritingUser(ctx context.Context, userID string) error
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error)
 	PublishContentVersion(ctx context.Context, arg PublishContentVersionParams) (pgtype.UUID, error)
+	QueueWriting(ctx context.Context, arg QueueWritingParams) (WritingSubmission, error)
 	RecordAttemptReview(ctx context.Context, arg RecordAttemptReviewParams) (pgtype.UUID, error)
 	RecordMistakeRetry(ctx context.Context, arg RecordMistakeRetryParams) error
 	RecordPracticeAnswer(ctx context.Context, arg RecordPracticeAnswerParams) error
+	RecordWritingRequest(ctx context.Context, arg RecordWritingRequestParams) error
 	ReserveAdminLogin(ctx context.Context, email string) (ReserveAdminLoginRow, error)
 	ResetAdminLogin(ctx context.Context, id pgtype.UUID) error
 	RevokeSession(ctx context.Context, tokenHash []byte) error
@@ -83,12 +96,14 @@ type Querier interface {
 	SaveCommunityProfile(ctx context.Context, arg SaveCommunityProfileParams) error
 	SaveReminder(ctx context.Context, arg SaveReminderParams) error
 	SaveWorkspace(ctx context.Context, arg SaveWorkspaceParams) ([]byte, error)
+	SaveWriting(ctx context.Context, arg SaveWritingParams) (WritingSubmission, error)
 	SetAttemptAnswerScore(ctx context.Context, arg SetAttemptAnswerScoreParams) error
 	SetDraftExam(ctx context.Context, arg SetDraftExamParams) error
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	UpdateContentDraft(ctx context.Context, arg UpdateContentDraftParams) (pgtype.UUID, error)
 	UpdateExternalProfile(ctx context.Context, arg UpdateExternalProfileParams) (User, error)
 	UpdateStudentProfile(ctx context.Context, arg UpdateStudentProfileParams) (StudentProfile, error)
+	WritingKeyAvailable(ctx context.Context) (bool, error)
 }
 
 var _ Querier = (*Queries)(nil)

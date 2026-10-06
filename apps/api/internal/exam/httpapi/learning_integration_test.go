@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/own/mock-ai/apps/api/internal/platform/keyvault"
+	writingapp "github.com/own/mock-ai/apps/api/internal/writing/application"
+	writinghttp "github.com/own/mock-ai/apps/api/internal/writing/httpapi"
+	writingpg "github.com/own/mock-ai/apps/api/internal/writing/postgres"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,7 +15,9 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -71,7 +77,8 @@ func TestLearningIntegration(t *testing.T) {
 	authHandler := authhttp.New(auth, googleauth.New("", "", "", ""), logger, "http://localhost", false)
 	adminService := adminapp.New(adminpg.New(pool))
 	adminHandler := adminhttp.New(adminService, "http://localhost", false)
-	handler := httpserver.New(logger, "http://localhost", authHandler, examhttp.New(service, authHandler, logger, adminHandler), adminHandler)
+	writingService := writingapp.New(writingpg.New(pool), writingTestEvaluator{}, "gemini-3.7-flash")
+	handler := httpserver.New(logger, "http://localhost", authHandler, examhttp.New(service, authHandler, logger, adminHandler), adminHandler, writinghttp.New(writingService, authHandler, "http://localhost"))
 	request := func(method, path string, payload any, cookie *http.Cookie, status int) map[string]json.RawMessage {
 		t.Helper()
 		b, _ := json.Marshal(payload)
@@ -315,16 +322,136 @@ func TestLearningIntegration(t *testing.T) {
 		t.Fatalf("week reset must preserve lifetime progress: %+v", reset)
 	}
 	t.Log("community privacy, opt-out, validation, ties, duplicate prevention, empty mocks and UTC reset passed")
+	request("GET", "/api/v1/writing/submissions", nil, nil, 401)
+	request("GET", "/api/v1/writing/submissions", nil, adminCookie, 401)
+	sealed, e := keyvault.Seal(strings.Repeat("ab", 32), "test-gemini-key-not-a-live-credential")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = queries.ImportAIKey(context.Background(), db.ImportAIKeyParams{Fingerprint: "integration-only", Ciphertext: sealed}); e != nil {
+		t.Fatal(e)
+	}
+	essay := strings.Repeat("Public transport helps workers reach their jobs and saves road space. ", 25)
+	input := writingapp.Input{Prompt: "Should cities invest in public transport instead of roads?", Essay: essay}
+	draft, e := writingService.Create(context.Background(), student.ID, input)
+	if e != nil {
+		t.Fatal(e)
+	}
+	wpath := "/api/v1/writing/submissions/" + draft.ID
+	request("GET", wpath, nil, other, 404)
+	request("PUT", wpath, input, other, 404)
+	request("DELETE", wpath, nil, other, 404)
+	request("POST", wpath+"/evaluate", map[string]any{"revision": 1, "consent": true}, other, 404)
+	request("POST", wpath+"/evaluate", map[string]any{"revision": 1, "consent": false}, cookie, 422)
+	request("POST", wpath+"/evaluate", map[string]any{"revision": 999, "consent": true}, cookie, 409)
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, e := writingService.Submit(context.Background(), student.ID, draft.ID, 1, true)
+			errs <- e
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		if e != nil {
+			t.Fatal("concurrent submit failed", e)
+		}
+	}
+	requests, e := queries.CountWritingToday(context.Background(), uid)
+	if e != nil || requests != 1 {
+		t.Fatal("duplicate requests consumed quota", requests, e)
+	}
+	request("PUT", wpath, input, cookie, 409)
+	request("DELETE", wpath, nil, cookie, 409)
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	go writingService.Run(workerCtx)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		draft, e = writingService.Repo.Get(context.Background(), student.ID, draft.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if draft.Status == "completed" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	stopWorker()
+	if draft.Status != "completed" {
+		t.Fatal("writing worker did not complete", draft.Status)
+	}
+	var wr writingapp.Report
+	if e = json.Unmarshal(draft.Report, &wr); e != nil || wr.Overall != 6.5 {
+		t.Fatal("invalid writing aggregate", e)
+	}
+	copy, e := writingService.Create(context.Background(), student.ID, writingapp.Input{ParentID: draft.ID, Essay: essay})
+	if e != nil || copy.Prompt != input.Prompt {
+		t.Fatal("revision lost task", e)
+	}
+	request("POST", "/api/v1/writing/submissions", writingapp.Input{ParentID: draft.ID, Essay: essay}, other, 404)
+	if _, e = writingService.Submit(context.Background(), student.ID, copy.ID, 1, true); e != nil {
+		t.Fatal(e)
+	}
+	oldRun, e := writingService.Repo.Claim(context.Background())
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = pool.Exec(context.Background(), "UPDATE writing_submissions SET lease_until=now()-interval '1 second' WHERE id=$1", copy.ID); e != nil {
+		t.Fatal(e)
+	}
+	if e = writingService.Repo.Expire(context.Background()); e != nil {
+		t.Fatal(e)
+	}
+	interrupted, e := writingService.Repo.Get(context.Background(), student.ID, copy.ID)
+	if e != nil || interrupted.Status != "failed" || interrupted.ErrorCode != "interrupted" {
+		t.Fatal("interrupted job not recoverable", e)
+	}
+	if _, e = writingService.Submit(context.Background(), student.ID, copy.ID, 1, true); e != nil {
+		t.Fatal(e)
+	}
+	newRun, e := writingService.Repo.Claim(context.Background())
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = writingService.Repo.Finish(context.Background(), oldRun.ID, oldRun.RunID, nil, "invalid_feedback"); e != writingapp.ErrConflict {
+		t.Fatal("stale worker overwrote retry", e)
+	}
+	if e = writingService.Repo.Finish(context.Background(), newRun.ID, newRun.RunID, nil, "provider_unavailable"); e != nil {
+		t.Fatal(e)
+	}
+	for i := 0; i < 2; i++ {
+		v, e := writingService.Create(context.Background(), student.ID, input)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = writingService.Submit(context.Background(), student.ID, v.ID, 1, true); e != nil {
+			t.Fatal(e)
+		}
+	}
+	request("DELETE", wpath, nil, cookie, 204)
+	request("GET", wpath, nil, cookie, 404)
+	request("POST", "/api/v1/writing/submissions/"+copy.ID+"/evaluate", map[string]any{"revision": 1, "consent": true}, cookie, 429)
+	t.Log("writing ownership, consent, revision locking, concurrent idempotency, durable worker report, computed score, revisions and deletion-resistant quota passed")
 	// Only disposable integration content is removed. Production downgrades refuse
 	// to erase attribution while admin-authored content still exists.
 	if _, e = pool.Exec(context.Background(), "WITH removed AS (DELETE FROM content_drafts WHERE id=$1 RETURNING exam_id) DELETE FROM exams WHERE id IN (SELECT exam_id FROM removed)", draftID); e != nil {
 		t.Fatal(e)
 	}
-	if e = migration.Steps(-5); e != nil {
+	if e = migration.Steps(-6); e != nil {
 		t.Fatal("rollback new migrations:", e)
 	}
 	if e = migration.Up(); e != nil {
 		t.Fatal("reapply new migrations:", e)
 	}
 	t.Log("new migrations rolled back and reapplied successfully")
+}
+
+type writingTestEvaluator struct{}
+
+func (writingTestEvaluator) Evaluate(_ context.Context, s writingapp.Submission) ([]byte, error) {
+	return json.Marshal(writingapp.Report{Overall: 9, Summary: "Add a specific example.", Criteria: []writingapp.Criterion{{Key: "task_response", Score: 6, Reason: "Needs development."}, {Key: "coherence_cohesion", Score: 7, Reason: "Clear links."}, {Key: "lexical_resource", Score: 6, Reason: "Repetitive vocabulary."}, {Key: "grammar", Score: 7, Reason: "Accurate sentences."}}, Strengths: []string{"Clear claim."}, Issues: []writingapp.Issue{{Category: "argument", Quote: "Public transport helps workers", Explanation: "Explain the mechanism.", Suggestion: "Add a realistic example.", Example: "An early bus connects workers to an industrial estate."}}, NextSteps: []string{"Develop a causal explanation."}, Rewrite: writingapp.Rewrite{Original: "Public transport helps workers", Improved: "Frequent buses give workers a reliable commute", Explanation: "More specific."}})
 }

@@ -1,0 +1,52 @@
+-- name: ImportAIKey :exec
+INSERT INTO ai_provider_keys(provider,fingerprint,ciphertext) VALUES('gemini',$1,$2)
+ON CONFLICT(fingerprint) DO NOTHING;
+
+-- name: GetPrimaryAIKey :one
+SELECT ciphertext FROM ai_provider_keys WHERE provider='gemini' AND enabled ORDER BY created_at,id LIMIT 1;
+
+-- name: WritingKeyAvailable :one
+SELECT EXISTS(SELECT 1 FROM ai_provider_keys WHERE provider='gemini' AND enabled)::boolean;
+
+-- name: CreateWriting :one
+INSERT INTO writing_submissions(user_id,parent_id,prompt,essay) VALUES($1,$2,$3,$4) RETURNING *;
+
+-- name: ListWriting :many
+SELECT * FROM writing_submissions WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 50;
+
+-- name: GetWriting :one
+SELECT * FROM writing_submissions WHERE user_id=$1 AND id=$2;
+
+-- name: SaveWriting :one
+UPDATE writing_submissions SET prompt=$3,essay=$4,revision=revision+1,updated_at=now()
+WHERE user_id=$1 AND id=$2 AND revision=$5 AND status='draft' RETURNING *;
+
+-- name: DeleteWriting :execrows
+DELETE FROM writing_submissions WHERE user_id=$1 AND id=$2 AND status NOT IN ('queued','processing');
+
+-- name: LockWritingUser :exec
+SELECT pg_advisory_xact_lock(hashtextextended('writing:' || sqlc.arg(user_id)::text,0));
+
+-- name: CountWritingToday :one
+SELECT count(*)::integer FROM writing_evaluation_requests WHERE user_id=$1
+AND created_at>=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
+
+-- name: RecordWritingRequest :exec
+INSERT INTO writing_evaluation_requests(user_id,submission_id) VALUES($1,$2);
+
+-- name: QueueWriting :one
+UPDATE writing_submissions SET status='queued',model=$3,rubric_version=$4,error_code='',run_id=gen_random_uuid(),updated_at=now()
+WHERE user_id=$1 AND id=$2 AND revision=$5 AND status IN ('draft','failed') RETURNING *;
+
+-- name: ClaimWriting :one
+WITH next AS (SELECT id FROM writing_submissions WHERE status='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
+UPDATE writing_submissions w SET status='processing',lease_until=now()+interval '3 minutes',updated_at=now()
+FROM next WHERE w.id=next.id RETURNING w.*;
+
+-- name: ExpireWritingJobs :exec
+UPDATE writing_submissions SET status='failed',error_code='interrupted',lease_until=NULL,updated_at=now()
+WHERE status='processing' AND lease_until<now();
+
+-- name: FinishWriting :execrows
+UPDATE writing_submissions SET status=$2,report=$3,error_code=$4,lease_until=NULL,updated_at=now()
+WHERE id=$1 AND status='processing' AND lease_until>now() AND run_id=$5;

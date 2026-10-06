@@ -70,3 +70,34 @@ refuses to run while admin-authored content exists, to prevent attribution loss;
 use a forward fix or an explicitly planned export/migration instead. Initial
 admin provisioning is an operator step, not a GitHub Actions secret or build-time
 password. Student and admin authentication are deliberately independent.
+## Gemini Writing evaluation
+
+Migration 000010 adds encrypted provider keys, owned writing submissions and a
+durable evaluation queue. `APP_AI_KEY_ENCRYPTION_KEY` is a GitHub Actions secret
+containing 32 random bytes encoded as 64 hex characters; CI passes it as
+`AI_KEY_ENCRYPTION_KEY`. Back up this secret securely: changing or losing it makes
+stored keys unreadable until they are re-encrypted/reimported. Never commit it.
+
+`GEMINI_WRITING_MODEL` is an optional Actions variable, defaulting to the verified
+stable `gemini-3.7-flash`. There is no silent model-family fallback. The actual
+provider-reported model version is stored in each report. HTTP calls are bounded
+to 95 seconds. The API worker runs independently of student HTTP request lifetimes.
+
+The operator-only `/app/mock-ai-ai-keys` binary reads a JSON array of Gemini API
+keys from stdin and stores AES-256-GCM ciphertext with provider-specific associated
+data. Fingerprints deduplicate imports; existing ciphertext is not overwritten.
+Import only the authorized source entries named `gemini-api-key`. Do not import
+the U-Code access bearer or unrelated provider credentials. The import command
+never prints key values. No frontend or API route exports stored keys.
+
+The current worker uses one enabled primary key, ordered by creation time and ID.
+Other imported keys are retained for operator-managed rotation. It does not cycle
+keys to evade a provider rate limit. Provider failures produce a generic safe
+error; no raw provider body, essay, credential or authorization header is logged.
+If the master secret or keys are absent, evaluation is unavailable but drafts work.
+
+Local verification: regular `go test ./...`; isolated database checks use the
+existing `MOCKAI_INTEGRATION=1` suite. The optional `TestLiveWriting` test accepts
+`MOCKAI_LIVE_GEMINI_KEY` and sends only a checked-in synthetic essay. Do not enable
+live calls in routine CI. Model scoring still needs human calibration before it
+is used for consequential assessments.

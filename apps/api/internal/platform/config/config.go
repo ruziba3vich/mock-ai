@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,8 @@ type Config struct {
 	DatabaseURL        string
 	WebOrigin          string
 	AdminOrigin        string
+	AIKeyEncryptionKey string
+	GeminiWritingModel string
 	TelegramBotToken   string
 	TelegramMiniAppURL string
 	GoogleClientID     string
@@ -28,6 +31,8 @@ func Load() (Config, error) {
 		Environment:        envOr("APP_ENV", "development"),
 		HTTPAddr:           envOr("HTTP_ADDR", ":8080"),
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		AIKeyEncryptionKey: os.Getenv("AI_KEY_ENCRYPTION_KEY"),
+		GeminiWritingModel: envOr("GEMINI_WRITING_MODEL", "gemini-3.7-flash"),
 		WebOrigin:          envOr("WEB_ORIGIN", "http://localhost:5173"),
 		TelegramBotToken:   os.Getenv("TELEGRAM_BOT_TOKEN"),
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
@@ -37,6 +42,12 @@ func Load() (Config, error) {
 		SessionTTL:         30 * 24 * time.Hour,
 	}
 	cfg.TelegramMiniAppURL = envOr("TELEGRAM_MINI_APP_URL", cfg.WebOrigin)
+	if cfg.AIKeyEncryptionKey != "" {
+		key, e := hex.DecodeString(cfg.AIKeyEncryptionKey)
+		if e != nil || len(key) != 32 {
+			return Config{}, fmt.Errorf("AI_KEY_ENCRYPTION_KEY must contain 32 hex-encoded bytes")
+		}
+	}
 	cfg.SecureCookie = cfg.Environment != "development"
 	if cfg.SecureCookie {
 		cfg.AdminOrigin = envOr("ADMIN_ORIGIN", "https://mockai.admin.chessinsight.uz")

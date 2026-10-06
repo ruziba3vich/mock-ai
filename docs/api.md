@@ -115,3 +115,40 @@ existing sessions. Five failed login attempts lock an account for the remainder
 of its 15-minute login window. There is no public administrator registration.
 New drafts use `admin_author_id`; new exams use `created_by_admin`. Historical
 system/student author references are retained solely as legacy metadata.
+## Writing Task 2 (Gemini practice feedback)
+
+All routes require a student session. Writes require an Origin equal to WEB_ORIGIN.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/api/v1/writing/settings` | Availability, model ID and daily request limit; never returns keys |
+| GET / POST | `/api/v1/writing/submissions` | Latest 50 owned essays / create a draft with prompt, essay and optional owned completed parent_id |
+| GET / PUT / DELETE | `/api/v1/writing/submissions/{id}` | Owned record / update editable draft with revision / delete inactive essay and report |
+| POST | `/api/v1/writing/submissions/{id}/evaluate` | Submit saved revision with `consent: true`; returns 202 and queued submission |
+
+Evaluate requires 50–1800 words and a 20–4000-byte task prompt. Drafts can be
+shorter. Task 2's practice target is 250+ words. Essay size is limited to 20 KB.
+Queued/processing/completed submissions are immutable. Revisions are new drafts
+linked to the original; original reports stay available. Deleting a parent clears
+the link without deleting revisions. A stale draft revision returns 409.
+
+Evaluation is a durable PostgreSQL queue, not an HTTP-long-running request.
+Atomic per-user locking prevents concurrent duplicate billing requests and caps
+evaluation requests, including retries, at five per UTC day. Deleting an essay
+does not reset that quota. A worker claims one job at a time; its three-minute
+lease and per-run identifier prevent stale completions from replacing a retry.
+Expired jobs become failed rather than silently triggering another paid call.
+Students may explicitly retry failed jobs. Poll the owned GET route for status.
+
+Reports contain summary, strengths, four criterion estimates, quoted issues
+(including argument development), a sample passage revision and prioritized
+next steps. Quotes are validated as exact essay substrings. Malformed or incomplete
+feedback is failed, not presented as a score. The backend computes `overall` as
+the equal criterion average rounded to the nearest half band. This is a Task 2
+practice estimate, not a combined Task 1/2 Writing score or overall IELTS score.
+Model version and rubric version are recorded for reproducibility.
+
+Only the task prompt and essay are sent to Google Gemini, after explicit consent.
+No user identifier, email, Telegram profile, secret or other student's work enters
+the prompt. AI output is rendered as text, never executable HTML. This does not
+provide plagiarism detection, fact checking or an official examiner assessment.

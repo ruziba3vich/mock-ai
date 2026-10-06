@@ -425,6 +425,15 @@ type AdminSession struct {
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 }
 
+type AiProviderKey struct {
+	ID          pgtype.UUID        `json:"id"`
+	Provider    string             `json:"provider"`
+	Fingerprint string             `json:"fingerprint"`
+	Ciphertext  []byte             `json:"ciphertext"`
+	Enabled     bool               `json:"enabled"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Attempt struct {
 	ID            pgtype.UUID        `json:"id"`
 	UserID        pgtype.UUID        `json:"user_id"`
@@ -648,4 +657,29 @@ type UserRoleAssignment struct {
 	UserID    pgtype.UUID        `json:"user_id"`
 	Role      UserRole           `json:"role"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type WritingEvaluationRequest struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	SubmissionID pgtype.UUID        `json:"submission_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type WritingSubmission struct {
+	ID            pgtype.UUID        `json:"id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	ParentID      pgtype.UUID        `json:"parent_id"`
+	Prompt        string             `json:"prompt"`
+	Essay         string             `json:"essay"`
+	Revision      int32              `json:"revision"`
+	RunID         pgtype.UUID        `json:"run_id"`
+	Status        string             `json:"status"`
+	Report        []byte             `json:"report"`
+	Model         string             `json:"model"`
+	RubricVersion string             `json:"rubric_version"`
+	ErrorCode     string             `json:"error_code"`
+	LeaseUntil    pgtype.Timestamptz `json:"lease_until"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
