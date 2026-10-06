@@ -10,6 +10,7 @@ import (
 	"github.com/own/mock-ai/apps/api/internal/platform/keyvault"
 	db "github.com/own/mock-ai/apps/api/internal/platform/postgres/sqlc"
 	d "github.com/own/mock-ai/apps/api/internal/speaking/domain"
+	"strconv"
 	"time"
 )
 
@@ -20,7 +21,10 @@ type Repository struct {
 }
 
 func New(p *pgxpool.Pool, master string) *Repository { return &Repository{p, db.New(p), master} }
-func uuid(v string) pgtype.UUID                      { var id pgtype.UUID; _ = id.Scan(v); return id }
+func recordingBinding(id string, position int32) string {
+	return "mockai:speaking:recording:v1:" + id + ":" + strconv.Itoa(int(position))
+}
+func uuid(v string) pgtype.UUID { var id pgtype.UUID; _ = id.Scan(v); return id }
 func str(v pgtype.UUID) string {
 	if !v.Valid {
 		return ""
@@ -148,7 +152,7 @@ func (r *Repository) Answer(ctx context.Context, u, id string, pos int32, audio 
 		if e != nil {
 			return d.Session{}, e
 		}
-		sealed, e = keyvault.Seal(r.Master, string(audio))
+		sealed, e = keyvault.SealBound(r.Master, string(audio), recordingBinding(str(s.ID), pos))
 		if e != nil {
 			return d.Session{}, e
 		}
@@ -282,7 +286,7 @@ func (r *Repository) Audio(ctx context.Context, u, id string, pos int32, examine
 	if len(v.Recording) == 0 {
 		return nil, d.ErrNotFound
 	}
-	plain, e := keyvault.Open(r.Master, v.Recording)
+	plain, e := keyvault.OpenBound(r.Master, v.Recording, recordingBinding(str(uuid(id)), pos))
 	return []byte(plain), e
 }
 func (r *Repository) ClaimVoice(ctx context.Context) (d.VoiceJob, error) {
@@ -314,7 +318,7 @@ func (r *Repository) ClaimReport(ctx context.Context) (d.Session, error) {
 	}
 	for _, a := range rows {
 		if len(a.Recording) > 0 {
-			plain, err := keyvault.Open(r.Master, a.Recording)
+			plain, err := keyvault.OpenBound(r.Master, a.Recording, recordingBinding(s.ID, a.Position))
 			if err != nil {
 				return s, err
 			}

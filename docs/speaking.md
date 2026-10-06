@@ -34,7 +34,7 @@ Student WAV format: 44-byte PCM header, 16 kHz mono, signed 16-bit little endian
 
 ## Persistence, privacy and failure recovery
 
-Recordings are AES-256-GCM encrypted in PostgreSQL. Recordings and generated question audio expire after 30 days; cleanup runs even if evaluation is disabled. Reports/transcripts remain until student deletion. Users consent before their recordings are sent to Google. Larger combined recordings use Gemini Files and request deletion after evaluation; provider-side retention/data policies still apply. Do not claim zero retention.
+Recordings are AES-256-GCM encrypted in PostgreSQL, with authenticated data binding each ciphertext to its Speaking purpose, session and question. Provider-key ciphertext cannot be decoded as a recording. Recordings and generated question audio expire after 30 days; cleanup runs even if evaluation is disabled. Reports/transcripts remain until student deletion. Users consent before their recordings are sent to Google. Larger combined recordings use Gemini Files and request deletion after evaluation; provider-side retention/data policies still apply. Do not claim zero retention.
 
 One open interview per student, three new interviews/day and five evaluation requests/day (UTC). Deleting an interview does not reset its usage. Durable DB queues use leases, run IDs and guarded completion; retries cannot overwrite a newer run, and deletion cannot be undone by an in-flight worker. Failed/interrupted reports are retryable. Saved answers resume after refresh; unsaved recordings cannot be recovered after leaving. Session deletion cascades to turns.
 
