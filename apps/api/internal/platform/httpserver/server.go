@@ -5,6 +5,7 @@ import (
 	adminhttp "github.com/own/mock-ai/apps/api/internal/admin/httpapi"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	examhttp "github.com/own/mock-ai/apps/api/internal/exam/httpapi"
@@ -33,7 +34,9 @@ func New(logger *slog.Logger, webOrigin string, auth *httpapi.Handler, exams *ex
 
 func cors(origin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin != "" && r.Header.Get("Origin") == origin {
+		// Admin APIs are same-origin only. Student CORS permission must not
+		// expose administrator data across the two frontend origins.
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/admin/") && origin != "" && r.Header.Get("Origin") == origin {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")

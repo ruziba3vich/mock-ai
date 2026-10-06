@@ -215,6 +215,14 @@ func TestLearningIntegration(t *testing.T) {
 	}
 	request("GET", "/api/v1/me", nil, adminCookie, 401)
 	request("GET", "/api/v1/admin/me", nil, adminCookie, 200)
+	adminRead := httptest.NewRequest("GET", "/api/v1/admin/me", nil)
+	adminRead.AddCookie(adminCookie)
+	adminRead.Header.Set("Origin", "http://localhost")
+	adminResponse := httptest.NewRecorder()
+	handler.ServeHTTP(adminResponse, adminRead)
+	if adminResponse.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("student CORS policy leaked into admin realm")
+	}
 	var studentCount int
 	if e = pool.QueryRow(context.Background(), "SELECT count(*) FROM users WHERE email='editor@example.com'").Scan(&studentCount); e != nil || studentCount != 0 {
 		t.Fatal("admin must not create a student", e)
