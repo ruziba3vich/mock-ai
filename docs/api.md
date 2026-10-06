@@ -16,6 +16,8 @@ All request and response bodies use JSON. Authentication uses the `mock_ai_sessi
 
 Google login automatically links to an existing account when Google returns the same verified email. Telegram uses the stable Telegram user ID as its identity subject.
 
+When `TELEGRAM_BOT_TOKEN` is configured, the API also consumes bot updates. `/start` creates or refreshes the same Telegram-backed student profile, sends a first-time or returning-user greeting, and exposes the Mini App through inline and persistent menu buttons.
+
 ## Exams and attempts
 
 | Method | Path | Purpose |

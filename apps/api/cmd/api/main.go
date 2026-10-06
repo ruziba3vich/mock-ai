@@ -21,6 +21,7 @@ import (
 	identitypostgres "github.com/own/mock-ai/apps/api/internal/identity/postgres"
 	"github.com/own/mock-ai/apps/api/internal/platform/config"
 	"github.com/own/mock-ai/apps/api/internal/platform/httpserver"
+	"github.com/own/mock-ai/apps/api/internal/telegrambot"
 )
 
 func main() {
@@ -55,6 +56,11 @@ func main() {
 	examRepository := exampostgres.New(pool)
 	examService := examapp.NewService(examRepository)
 	examHandler := examhttp.New(examService, identityHandler, logger)
+	bot, err := telegrambot.New(cfg.TelegramBotToken, cfg.TelegramMiniAppURL, identityService, logger)
+	if err != nil {
+		logger.Error("initialize Telegram bot", "error", err)
+		os.Exit(1)
+	}
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -67,6 +73,11 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if bot != nil {
+		go bot.Run(ctx)
+	} else {
+		logger.Info("Telegram bot disabled")
+	}
 
 	go func() {
 		logger.Info("api listening", "address", cfg.HTTPAddr, "environment", cfg.Environment)

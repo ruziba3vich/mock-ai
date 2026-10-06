@@ -95,14 +95,15 @@ func (r *Repository) PasswordLogin(ctx context.Context, email string) (domain.Us
 	return user, record.PasswordHash, nil
 }
 
-func (r *Repository) FindOrCreateExternal(ctx context.Context, profile domain.ExternalProfile) (domain.User, error) {
+func (r *Repository) FindOrCreateExternal(ctx context.Context, profile domain.ExternalProfile) (domain.User, bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return domain.User{}, fmt.Errorf("begin external login: %w", err)
+		return domain.User{}, false, fmt.Errorf("begin external login: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := r.queries.WithTx(tx)
 	provider := db.IdentityProvider(profile.Provider)
+	created := false
 
 	user, err := q.GetUserByIdentity(ctx, db.GetUserByIdentityParams{
 		Provider:        provider,
@@ -115,14 +116,14 @@ func (r *Repository) FindOrCreateExternal(ctx context.Context, profile domain.Ex
 			AvatarUrl:   text(profile.AvatarURL),
 		})
 		if err != nil {
-			return domain.User{}, fmt.Errorf("update external profile: %w", err)
+			return domain.User{}, false, fmt.Errorf("update external profile: %w", err)
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return domain.User{}, fmt.Errorf("find external identity: %w", err)
+		return domain.User{}, false, fmt.Errorf("find external identity: %w", err)
 	} else {
 		user, err = r.resolveExternalUser(ctx, q, profile)
 		if err != nil {
-			return domain.User{}, err
+			return domain.User{}, false, err
 		}
 		_, err = q.CreateIdentity(ctx, db.CreateIdentityParams{
 			UserID:          user.ID,
@@ -132,21 +133,22 @@ func (r *Repository) FindOrCreateExternal(ctx context.Context, profile domain.Ex
 			Profile:         profile.RawProfile,
 		})
 		if err != nil {
-			return domain.User{}, classify(err)
+			return domain.User{}, false, classify(err)
 		}
+		created = true
 	}
 
 	if err := q.AssignUserRole(ctx, db.AssignUserRoleParams{UserID: user.ID, Role: db.UserRoleStudent}); err != nil {
-		return domain.User{}, fmt.Errorf("assign student role: %w", err)
+		return domain.User{}, false, fmt.Errorf("assign student role: %w", err)
 	}
 	roles, err := q.ListUserRoles(ctx, user.ID)
 	if err != nil {
-		return domain.User{}, fmt.Errorf("list user roles: %w", err)
+		return domain.User{}, false, fmt.Errorf("list user roles: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return domain.User{}, fmt.Errorf("commit external login: %w", err)
+		return domain.User{}, false, fmt.Errorf("commit external login: %w", err)
 	}
-	return toDomain(user, roles), nil
+	return toDomain(user, roles), created, nil
 }
 
 func (r *Repository) resolveExternalUser(ctx context.Context, q *db.Queries, profile domain.ExternalProfile) (db.User, error) {

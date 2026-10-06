@@ -13,6 +13,7 @@ type Config struct {
 	DatabaseURL        string
 	WebOrigin          string
 	TelegramBotToken   string
+	TelegramMiniAppURL string
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURL  string
@@ -34,6 +35,7 @@ func Load() (Config, error) {
 		SessionSecret:      os.Getenv("SESSION_SECRET"),
 		SessionTTL:         30 * 24 * time.Hour,
 	}
+	cfg.TelegramMiniAppURL = envOr("TELEGRAM_MINI_APP_URL", cfg.WebOrigin)
 	cfg.SecureCookie = cfg.Environment != "development"
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")

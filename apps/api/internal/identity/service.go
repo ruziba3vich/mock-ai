@@ -29,7 +29,7 @@ var (
 type Repository interface {
 	RegisterEmail(ctx context.Context, name, email, passwordHash string) (domain.User, error)
 	PasswordLogin(ctx context.Context, email string) (domain.User, string, error)
-	FindOrCreateExternal(ctx context.Context, profile domain.ExternalProfile) (domain.User, error)
+	FindOrCreateExternal(ctx context.Context, profile domain.ExternalProfile) (domain.User, bool, error)
 	CreateSession(ctx context.Context, userID string, tokenHash []byte, expiresAt time.Time, userAgent, ipAddress string) error
 	UserBySession(ctx context.Context, tokenHash []byte) (domain.User, error)
 	RevokeSession(ctx context.Context, tokenHash []byte) error
@@ -118,7 +118,7 @@ func (s *Service) LoginTelegram(ctx context.Context, initData, userAgent, ipAddr
 	if err != nil {
 		return domain.User{}, Session{}, err
 	}
-	user, err := s.repository.FindOrCreateExternal(ctx, domain.ExternalProfile{
+	user, _, err := s.repository.FindOrCreateExternal(ctx, domain.ExternalProfile{
 		Provider:    "telegram",
 		Subject:     fmt.Sprintf("%d", result.User.ID),
 		DisplayName: result.User.DisplayName(),
@@ -136,12 +136,31 @@ func (s *Service) LoginExternal(ctx context.Context, profile domain.ExternalProf
 	if profile.Provider == "" || profile.Subject == "" || profile.DisplayName == "" {
 		return domain.User{}, Session{}, ErrInvalidInput
 	}
-	user, err := s.repository.FindOrCreateExternal(ctx, profile)
+	user, _, err := s.repository.FindOrCreateExternal(ctx, profile)
 	if err != nil {
 		return domain.User{}, Session{}, err
 	}
 	session, err := s.newSession(ctx, user.ID, userAgent, ipAddress)
 	return user, session, err
+}
+
+// EnsureTelegramUser creates or refreshes a Telegram-backed student without
+// creating a browser session. It is used by the bot when a student sends
+// /start; the Mini App still establishes its own session from signed initData.
+func (s *Service) EnsureTelegramUser(ctx context.Context, user telegram.User, rawProfile []byte) (domain.User, bool, error) {
+	if !s.telegramEnabled {
+		return domain.User{}, false, ErrTelegramDisabled
+	}
+	if user.ID == 0 || strings.TrimSpace(user.DisplayName()) == "" {
+		return domain.User{}, false, ErrInvalidInput
+	}
+	return s.repository.FindOrCreateExternal(ctx, domain.ExternalProfile{
+		Provider:    "telegram",
+		Subject:     fmt.Sprintf("%d", user.ID),
+		DisplayName: user.DisplayName(),
+		AvatarURL:   user.PhotoURL,
+		RawProfile:  rawProfile,
+	})
 }
 
 func (s *Service) Authenticate(ctx context.Context, token string) (domain.User, error) {

@@ -16,7 +16,8 @@ Configure these repository or `production` environment secrets:
 | `APP_DATABASE_URL` | Production PostgreSQL URL using the private address, for example `postgres://...@172.30.50.10:5432/mock_ai?sslmode=disable` |
 | `APP_SESSION_SECRET` | At least 32 cryptographically random characters |
 | `APP_WEB_ORIGIN` | Public HTTPS origin of the web application |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token; may remain empty until Telegram is configured |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token; enables Mini App authentication and the `/start` bot worker |
+| `TELEGRAM_MINI_APP_URL` | Public HTTPS Mini App URL; optional and defaults to `APP_WEB_ORIGIN` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID; may remain empty until Google is configured |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret; may remain empty until Google is configured |
 | `GOOGLE_REDIRECT_URL` | Public API callback URL ending in `/api/v1/auth/google/callback` |
