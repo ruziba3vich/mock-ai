@@ -183,6 +183,12 @@ func (r *Repository) Queue(ctx context.Context, u, id string) (d.Session, error)
 		return d.Session{}, errRow(e)
 	}
 	if s.Status == "queued" || s.Status == "processing" || s.Status == "completed" {
+		// Release the transaction connection before the independent detail read.
+		// Concurrent duplicate submissions may otherwise exhaust the pool while
+		// waiting for this transaction's per-user lock.
+		if e = tx.Commit(ctx); e != nil {
+			return d.Session{}, e
+		}
 		return r.Get(ctx, u, id)
 	}
 	if time.Now().After(s.AudioExpiresAt.Time) || (s.Status != "active" && s.Status != "failed") {
