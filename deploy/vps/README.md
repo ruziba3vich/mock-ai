@@ -18,9 +18,18 @@ cd /home/statistics/tools/mock-ai
 docker network inspect mock_ai_private >/dev/null 2>&1 || \
   docker network create --subnet 172.30.50.0/24 mock_ai_private
 docker compose --env-file .env -f vpn/docker-compose.yaml up -d
+docker volume inspect mock_ai_postgres_data >/dev/null 2>&1 || \
+  docker volume create mock_ai_postgres_data
 docker compose --env-file .env -f postgres/docker-compose.yaml up -d
 docker compose --env-file .env -f redis/docker-compose.yaml up -d
 docker compose --env-file .env -f minio/docker-compose.yaml up -d
 ```
 
 The laptop peer config is generated at `vpn/config/peer_macbook/peer_macbook.conf`.
+
+PostgreSQL explicitly uses the `mock-ai-postgres` Compose project and the external
+`mock_ai_postgres_data` volume. Keep this project name unique: directory-derived
+names such as `postgres` can collide with unrelated stacks. Do not override it
+with a generic `-p` or `COMPOSE_PROJECT_NAME`, and never run `down` against the old
+generic project to migrate it. The database publishes no host port; its private
+`172.30.50.10:5432` address does not occupy the VPS host's port 5432.
