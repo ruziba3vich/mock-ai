@@ -515,6 +515,26 @@ type ContentDraft struct {
 	AdminAuthorID pgtype.UUID        `json:"admin_author_id"`
 }
 
+type ContentImport struct {
+	ID              pgtype.UUID        `json:"id"`
+	AdminAuthorID   pgtype.UUID        `json:"admin_author_id"`
+	Filename        string             `json:"filename"`
+	SizeBytes       int64              `json:"size_bytes"`
+	Sha256          string             `json:"sha256"`
+	RequestedSkills string             `json:"requested_skills"`
+	Status          string             `json:"status"`
+	Model           string             `json:"model"`
+	ProviderFileUri string             `json:"provider_file_uri"`
+	ProgressCurrent int32              `json:"progress_current"`
+	ProgressTotal   int32              `json:"progress_total"`
+	DraftIds        []byte             `json:"draft_ids"`
+	Warnings        []byte             `json:"warnings"`
+	ErrorMessage    string             `json:"error_message"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+}
+
 type Exam struct {
 	ID             pgtype.UUID        `json:"id"`
 	Slug           string             `json:"slug"`

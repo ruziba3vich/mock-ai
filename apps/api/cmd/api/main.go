@@ -16,6 +16,7 @@ import (
 	adminpg "github.com/own/mock-ai/apps/api/internal/admin/postgres"
 
 	examapp "github.com/own/mock-ai/apps/api/internal/exam/application"
+	geminiimport "github.com/own/mock-ai/apps/api/internal/exam/geminiimport"
 	examhttp "github.com/own/mock-ai/apps/api/internal/exam/httpapi"
 	exampostgres "github.com/own/mock-ai/apps/api/internal/exam/postgres"
 	"github.com/own/mock-ai/apps/api/internal/identity"
@@ -68,6 +69,9 @@ func main() {
 	identityHandler := identityhttp.New(identityService, googleProvider, logger, cfg.WebOrigin, cfg.SecureCookie)
 	examRepository := exampostgres.New(pool)
 	examService := examapp.NewService(examRepository)
+	if cfg.AIKeyEncryptionKey != "" {
+		examService.ConfigureImporter(geminiimport.New(db.New(pool), cfg.AIKeyEncryptionKey), cfg.GeminiContentModel, logger)
+	}
 	adminHandler := adminhttp.New(adminapp.New(adminpg.New(pool)), cfg.AdminOrigin, cfg.SecureCookie)
 	examHandler := examhttp.New(examService, identityHandler, logger, adminHandler)
 	var evaluator writingapp.Evaluator
@@ -95,14 +99,15 @@ func main() {
 		Addr:              cfg.HTTPAddr,
 		Handler:           httpserver.New(logger, cfg.WebOrigin, identityHandler, examHandler, adminHandler, writingHandler, speakingHandler),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		WriteTimeout:      2 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go writingService.Run(ctx)
+	examService.RunImports(ctx)
 	speakingService.Run(ctx)
 	if bot != nil {
 		go bot.Run(ctx)

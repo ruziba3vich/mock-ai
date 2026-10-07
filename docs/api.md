@@ -53,10 +53,14 @@ Practice checks accept the same `{"values":["answer"]}` shape as mock answers. P
 | GET / POST | `/api/v1/admin/content` | List drafts/create draft (separate admin session required) |
 | PUT | `/api/v1/admin/content/{draft_id}` | Save edits to a draft (separate admin session required) |
 | POST | `/api/v1/admin/content/{draft_id}/publish` | Validate and publish an immutable version; archive the prior published version |
+| GET | `/api/v1/admin/content-imports` | List the signed-in admin's latest PDF imports and generated draft IDs |
+| POST | `/api/v1/admin/content-imports` | Upload multipart `file`, `skills` and `rights_confirmed=true`; returns 202 |
 
 Reminders default to disabled. The bot checks every minute, claims at most one delivery per local day, and links to `/#plan`. Claims prevent duplicate delivery across workers. Delivery is best effort: a transport failure after claiming can skip that day's reminder. No reminder is sent without opt-in and a linked Telegram identity.
 
 Content supports multiple sections, options, accepted answers, explanations, HTTPS audio URLs and explicit mock band thresholds. Listening transcripts remain editor-only when published from the studio. Seeded practice recordings use synthetic narration of original scripts, labelled in the section instructions. The library is formative practice, not official IELTS exam material.
+
+PDF imports are asynchronous and never publish automatically. Files are limited to 50 MB, verified as PDFs, and sent to Gemini Files for temporary processing. The worker inventories complete tests, extracts each into a separate editable draft, records a SHA-256 source fingerprint, and shows warnings to the importing administrator. Admins must verify passages, answers, explanations, and band conversions. A Listening book supplies questions and, where present, transcripts; the licensed audio URL must be added and previewed before publication. A processing job interrupted by an API restart is marked failed and can be uploaded again.
 
 ## Study planning endpoints
 

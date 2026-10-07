@@ -228,3 +228,81 @@ func (r *Repository) PublishDraft(ctx context.Context, id string) (string, error
 	}
 	return uuidString(examID), nil
 }
+
+func (r *Repository) CreateImport(ctx context.Context, adminID, filename string, size int64, digest, skills, model, uri string) (string, error) {
+	uid, e := parseUUID(adminID)
+	if e != nil {
+		return "", app.ErrNotFound
+	}
+	id, e := r.queries.CreateContentImport(ctx, db.CreateContentImportParams{AdminAuthorID: uid, Filename: filename, SizeBytes: size, Sha256: digest, RequestedSkills: skills, Model: model, ProviderFileUri: uri})
+	return uuidString(id), e
+}
+
+func (r *Repository) ListImports(ctx context.Context, adminID string) ([]app.ContentImport, error) {
+	uid, e := parseUUID(adminID)
+	if e != nil {
+		return nil, app.ErrNotFound
+	}
+	rows, e := r.queries.ListContentImports(ctx, uid)
+	if e != nil {
+		return nil, e
+	}
+	out := make([]app.ContentImport, 0, len(rows))
+	for _, row := range rows {
+		var drafts, warnings []string
+		if e = json.Unmarshal(row.DraftIds, &drafts); e != nil {
+			return nil, e
+		}
+		if e = json.Unmarshal(row.Warnings, &warnings); e != nil {
+			return nil, e
+		}
+		item := app.ContentImport{ID: uuidString(row.ID), Filename: row.Filename, SizeBytes: row.SizeBytes, SHA256: row.Sha256, RequestedSkills: row.RequestedSkills, Status: row.Status, Model: row.Model, ProgressCurrent: row.ProgressCurrent, ProgressTotal: row.ProgressTotal, DraftIDs: drafts, Warnings: warnings, ErrorMessage: row.ErrorMessage}
+		item.CreatedAt = row.CreatedAt.Time
+		item.UpdatedAt = row.UpdatedAt.Time
+		if row.CompletedAt.Valid {
+			item.CompletedAt = row.CompletedAt.Time
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (r *Repository) ClaimImport(ctx context.Context) (app.ClaimedImport, error) {
+	row, e := r.queries.ClaimContentImport(ctx)
+	if e != nil {
+		return app.ClaimedImport{}, learningError(e)
+	}
+	return app.ClaimedImport{ID: uuidString(row.ID), AdminID: uuidString(row.AdminAuthorID), Filename: row.Filename, Skills: row.RequestedSkills, Model: row.Model, FileURI: row.ProviderFileUri}, nil
+}
+func (r *Repository) SetImportTotal(ctx context.Context, id string, total int32) error {
+	key, e := parseUUID(id)
+	if e != nil {
+		return app.ErrNotFound
+	}
+	return r.queries.SetContentImportTotal(ctx, db.SetContentImportTotalParams{ID: key, ProgressTotal: total})
+}
+func (r *Repository) AddImportDraft(ctx context.Context, id, draft string) error {
+	key, e := parseUUID(id)
+	if e != nil {
+		return app.ErrNotFound
+	}
+	return r.queries.AddContentImportDraft(ctx, db.AddContentImportDraftParams{ID: key, Column2: draft})
+}
+func (r *Repository) CompleteImport(ctx context.Context, id string, warnings []string) error {
+	key, e := parseUUID(id)
+	if e != nil {
+		return app.ErrNotFound
+	}
+	raw, _ := json.Marshal(warnings)
+	return r.queries.CompleteContentImport(ctx, db.CompleteContentImportParams{ID: key, Warnings: raw})
+}
+func (r *Repository) FailImport(ctx context.Context, id, message string) error {
+	key, e := parseUUID(id)
+	if e != nil {
+		return app.ErrNotFound
+	}
+	return r.queries.FailContentImport(ctx, db.FailContentImportParams{ID: key, ErrorMessage: message})
+}
+func (r *Repository) FailStaleImports(ctx context.Context) error {
+	return r.queries.FailStaleContentImports(ctx)
+}

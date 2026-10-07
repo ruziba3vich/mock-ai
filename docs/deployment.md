@@ -38,6 +38,7 @@ Deployment files live at `/home/statistics/tools/mock-ai/api` and are updated by
 - binds only to `127.0.0.1:8081` for a local Nginx reverse proxy;
 - runs as an unprivileged container user;
 - receives runtime configuration from GitHub Actions secrets through `/home/statistics/tools/mock-ai/api/.env`;
+- uses `GEMINI_CONTENT_MODEL` (default `gemini-3.7-flash`) for asynchronous admin PDF extraction when the encrypted Gemini key vault is configured;
 - runs embedded, versioned SQL migrations before replacing the API container;
 - is considered deployed only after `/healthz` passes its container health check.
 

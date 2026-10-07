@@ -219,6 +219,8 @@ func (h *Handler) fail(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_answer", err.Error())
 	case errors.Is(err, application.ErrInvalidProfile):
 		writeError(w, http.StatusUnprocessableEntity, "invalid_profile", err.Error())
+	case errors.Is(err, application.ErrImportUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "import_unavailable", err.Error())
 	default:
 		h.logger.Error("exam request failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "exam request failed")

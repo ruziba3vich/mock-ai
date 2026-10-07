@@ -16,6 +16,7 @@ type Config struct {
 	AdminOrigin              string
 	AIKeyEncryptionKey       string
 	GeminiWritingModel       string
+	GeminiContentModel       string
 	GeminiSpeakingModel      string
 	GeminiSpeakingVoiceModel string
 	GeminiSpeakingLiveModel  string
@@ -36,6 +37,7 @@ func Load() (Config, error) {
 		DatabaseURL:              os.Getenv("DATABASE_URL"),
 		AIKeyEncryptionKey:       os.Getenv("AI_KEY_ENCRYPTION_KEY"),
 		GeminiWritingModel:       envOr("GEMINI_WRITING_MODEL", "gemini-3.7-flash"),
+		GeminiContentModel:       envOr("GEMINI_CONTENT_MODEL", "gemini-3.7-flash"),
 		GeminiSpeakingModel:      envOr("GEMINI_SPEAKING_MODEL", "gemini-3.7-flash"),
 		GeminiSpeakingVoiceModel: envOr("GEMINI_SPEAKING_VOICE_MODEL", "gemini-3.8-flash-tts"),
 		GeminiSpeakingLiveModel:  envOr("GEMINI_SPEAKING_LIVE_MODEL", "gemini-3.8-live"),

@@ -124,6 +124,7 @@ jobs:
           ADMIN_ORIGIN: ${{ vars.APP_ADMIN_ORIGIN || 'https://mockai.admin.chessinsight.uz' }}
           AI_KEY_ENCRYPTION_KEY: ${{ secrets.APP_AI_KEY_ENCRYPTION_KEY }}
           GEMINI_WRITING_MODEL: ${{ vars.GEMINI_WRITING_MODEL || 'gemini-3.7-flash' }}
+          GEMINI_CONTENT_MODEL: ${{ vars.GEMINI_CONTENT_MODEL || 'gemini-3.7-flash' }}
           GEMINI_SPEAKING_MODEL: ${{ vars.GEMINI_SPEAKING_MODEL || 'gemini-3.7-flash' }}
           GEMINI_SPEAKING_VOICE_MODEL: ${{ vars.GEMINI_SPEAKING_VOICE_MODEL || 'gemini-3.8-flash-tts' }}
           GEMINI_SPEAKING_LIVE_MODEL: ${{ vars.GEMINI_SPEAKING_LIVE_MODEL || 'gemini-3.8-live' }}
@@ -152,6 +153,7 @@ jobs:
             "ADMIN_ORIGIN=$ADMIN_ORIGIN" \
             "AI_KEY_ENCRYPTION_KEY=$AI_KEY_ENCRYPTION_KEY" \
             "GEMINI_WRITING_MODEL=$GEMINI_WRITING_MODEL" \
+            "GEMINI_CONTENT_MODEL=$GEMINI_CONTENT_MODEL" \
             "GEMINI_SPEAKING_MODEL=$GEMINI_SPEAKING_MODEL" \
             "GEMINI_SPEAKING_VOICE_MODEL=$GEMINI_SPEAKING_VOICE_MODEL" \
             "GEMINI_SPEAKING_LIVE_MODEL=$GEMINI_SPEAKING_LIVE_MODEL" \

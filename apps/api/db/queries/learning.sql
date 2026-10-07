@@ -105,3 +105,36 @@ INSERT INTO accepted_answers(question_id,value,position) VALUES ($1,$2,$3);
 
 -- name: CreateContentBand :exec
 INSERT INTO band_conversions(exam_version_id,minimum_raw_score,band) VALUES ($1,$2,$3);
+
+-- name: CreateContentImport :one
+INSERT INTO content_imports(admin_author_id,filename,size_bytes,sha256,requested_skills,model,provider_file_uri)
+VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id;
+
+-- name: ListContentImports :many
+SELECT id,filename,size_bytes,sha256,requested_skills,status,model,progress_current,progress_total,draft_ids,warnings,error_message,created_at,updated_at,completed_at
+FROM content_imports WHERE admin_author_id=$1 ORDER BY created_at DESC LIMIT 30;
+
+-- name: ClaimContentImport :one
+WITH candidate AS (
+ SELECT id FROM content_imports WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED
+)
+UPDATE content_imports i SET status='processing',updated_at=now()
+FROM candidate WHERE i.id=candidate.id
+RETURNING i.id,i.admin_author_id,i.filename,i.requested_skills,i.model,i.provider_file_uri;
+
+-- name: SetContentImportTotal :exec
+UPDATE content_imports SET progress_total=$2,updated_at=now() WHERE id=$1 AND status='processing';
+
+-- name: AddContentImportDraft :exec
+UPDATE content_imports SET progress_current=progress_current+1,draft_ids=draft_ids || to_jsonb($2::text),updated_at=now()
+WHERE id=$1 AND status='processing';
+
+-- name: CompleteContentImport :exec
+UPDATE content_imports SET status='completed',warnings=$2,completed_at=now(),updated_at=now() WHERE id=$1 AND status='processing';
+
+-- name: FailContentImport :exec
+UPDATE content_imports SET status='failed',error_message=$2,completed_at=now(),updated_at=now() WHERE id=$1 AND status='processing';
+
+-- name: FailStaleContentImports :exec
+UPDATE content_imports SET status='failed',error_message='The server restarted during extraction. Upload the PDF again.',completed_at=now(),updated_at=now()
+WHERE status='processing';

@@ -11,6 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addContentImportDraft = `-- name: AddContentImportDraft :exec
+UPDATE content_imports SET progress_current=progress_current+1,draft_ids=draft_ids || to_jsonb($2::text),updated_at=now()
+WHERE id=$1 AND status='processing'
+`
+
+type AddContentImportDraftParams struct {
+	ID      pgtype.UUID `json:"id"`
+	Column2 string      `json:"column_2"`
+}
+
+func (q *Queries) AddContentImportDraft(ctx context.Context, arg AddContentImportDraftParams) error {
+	_, err := q.db.Exec(ctx, addContentImportDraft, arg.ID, arg.Column2)
+	return err
+}
+
 const archiveContentVersions = `-- name: ArchiveContentVersions :exec
 UPDATE exam_versions SET status = 'archived' WHERE exam_id = $1 AND status = 'published'
 `
@@ -18,6 +33,38 @@ UPDATE exam_versions SET status = 'archived' WHERE exam_id = $1 AND status = 'pu
 func (q *Queries) ArchiveContentVersions(ctx context.Context, examID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, archiveContentVersions, examID)
 	return err
+}
+
+const claimContentImport = `-- name: ClaimContentImport :one
+WITH candidate AS (
+ SELECT id FROM content_imports WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED
+)
+UPDATE content_imports i SET status='processing',updated_at=now()
+FROM candidate WHERE i.id=candidate.id
+RETURNING i.id,i.admin_author_id,i.filename,i.requested_skills,i.model,i.provider_file_uri
+`
+
+type ClaimContentImportRow struct {
+	ID              pgtype.UUID `json:"id"`
+	AdminAuthorID   pgtype.UUID `json:"admin_author_id"`
+	Filename        string      `json:"filename"`
+	RequestedSkills string      `json:"requested_skills"`
+	Model           string      `json:"model"`
+	ProviderFileUri string      `json:"provider_file_uri"`
+}
+
+func (q *Queries) ClaimContentImport(ctx context.Context) (ClaimContentImportRow, error) {
+	row := q.db.QueryRow(ctx, claimContentImport)
+	var i ClaimContentImportRow
+	err := row.Scan(
+		&i.ID,
+		&i.AdminAuthorID,
+		&i.Filename,
+		&i.RequestedSkills,
+		&i.Model,
+		&i.ProviderFileUri,
+	)
+	return i, err
 }
 
 const claimReminders = `-- name: ClaimReminders :many
@@ -57,6 +104,20 @@ func (q *Queries) ClaimReminders(ctx context.Context) ([]ClaimRemindersRow, erro
 		return nil, err
 	}
 	return items, nil
+}
+
+const completeContentImport = `-- name: CompleteContentImport :exec
+UPDATE content_imports SET status='completed',warnings=$2,completed_at=now(),updated_at=now() WHERE id=$1 AND status='processing'
+`
+
+type CompleteContentImportParams struct {
+	ID       pgtype.UUID `json:"id"`
+	Warnings []byte      `json:"warnings"`
+}
+
+func (q *Queries) CompleteContentImport(ctx context.Context, arg CompleteContentImportParams) error {
+	_, err := q.db.Exec(ctx, completeContentImport, arg.ID, arg.Warnings)
+	return err
 }
 
 const createContentAnswer = `-- name: CreateContentAnswer :exec
@@ -116,6 +177,36 @@ type CreateContentExamParams struct {
 
 func (q *Queries) CreateContentExam(ctx context.Context, arg CreateContentExamParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createContentExam, arg.Slug, arg.CreatedByAdmin)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createContentImport = `-- name: CreateContentImport :one
+INSERT INTO content_imports(admin_author_id,filename,size_bytes,sha256,requested_skills,model,provider_file_uri)
+VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id
+`
+
+type CreateContentImportParams struct {
+	AdminAuthorID   pgtype.UUID `json:"admin_author_id"`
+	Filename        string      `json:"filename"`
+	SizeBytes       int64       `json:"size_bytes"`
+	Sha256          string      `json:"sha256"`
+	RequestedSkills string      `json:"requested_skills"`
+	Model           string      `json:"model"`
+	ProviderFileUri string      `json:"provider_file_uri"`
+}
+
+func (q *Queries) CreateContentImport(ctx context.Context, arg CreateContentImportParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createContentImport,
+		arg.AdminAuthorID,
+		arg.Filename,
+		arg.SizeBytes,
+		arg.Sha256,
+		arg.RequestedSkills,
+		arg.Model,
+		arg.ProviderFileUri,
+	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -202,6 +293,30 @@ UPDATE study_reminders SET enabled = false WHERE user_id = $1
 
 func (q *Queries) DisableReminder(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, disableReminder, userID)
+	return err
+}
+
+const failContentImport = `-- name: FailContentImport :exec
+UPDATE content_imports SET status='failed',error_message=$2,completed_at=now(),updated_at=now() WHERE id=$1 AND status='processing'
+`
+
+type FailContentImportParams struct {
+	ID           pgtype.UUID `json:"id"`
+	ErrorMessage string      `json:"error_message"`
+}
+
+func (q *Queries) FailContentImport(ctx context.Context, arg FailContentImportParams) error {
+	_, err := q.db.Exec(ctx, failContentImport, arg.ID, arg.ErrorMessage)
+	return err
+}
+
+const failStaleContentImports = `-- name: FailStaleContentImports :exec
+UPDATE content_imports SET status='failed',error_message='The server restarted during extraction. Upload the PDF again.',completed_at=now(),updated_at=now()
+WHERE status='processing'
+`
+
+func (q *Queries) FailStaleContentImports(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, failStaleContentImports)
 	return err
 }
 
@@ -309,6 +424,65 @@ func (q *Queries) ListContentDrafts(ctx context.Context) ([]ListContentDraftsRow
 			&i.ExamID,
 			&i.Data,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listContentImports = `-- name: ListContentImports :many
+SELECT id,filename,size_bytes,sha256,requested_skills,status,model,progress_current,progress_total,draft_ids,warnings,error_message,created_at,updated_at,completed_at
+FROM content_imports WHERE admin_author_id=$1 ORDER BY created_at DESC LIMIT 30
+`
+
+type ListContentImportsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Filename        string             `json:"filename"`
+	SizeBytes       int64              `json:"size_bytes"`
+	Sha256          string             `json:"sha256"`
+	RequestedSkills string             `json:"requested_skills"`
+	Status          string             `json:"status"`
+	Model           string             `json:"model"`
+	ProgressCurrent int32              `json:"progress_current"`
+	ProgressTotal   int32              `json:"progress_total"`
+	DraftIds        []byte             `json:"draft_ids"`
+	Warnings        []byte             `json:"warnings"`
+	ErrorMessage    string             `json:"error_message"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+}
+
+func (q *Queries) ListContentImports(ctx context.Context, adminAuthorID pgtype.UUID) ([]ListContentImportsRow, error) {
+	rows, err := q.db.Query(ctx, listContentImports, adminAuthorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListContentImportsRow{}
+	for rows.Next() {
+		var i ListContentImportsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Filename,
+			&i.SizeBytes,
+			&i.Sha256,
+			&i.RequestedSkills,
+			&i.Status,
+			&i.Model,
+			&i.ProgressCurrent,
+			&i.ProgressTotal,
+			&i.DraftIds,
+			&i.Warnings,
+			&i.ErrorMessage,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CompletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -491,6 +665,20 @@ func (q *Queries) SaveWorkspace(ctx context.Context, arg SaveWorkspaceParams) ([
 	var data []byte
 	err := row.Scan(&data)
 	return data, err
+}
+
+const setContentImportTotal = `-- name: SetContentImportTotal :exec
+UPDATE content_imports SET progress_total=$2,updated_at=now() WHERE id=$1 AND status='processing'
+`
+
+type SetContentImportTotalParams struct {
+	ID            pgtype.UUID `json:"id"`
+	ProgressTotal int32       `json:"progress_total"`
+}
+
+func (q *Queries) SetContentImportTotal(ctx context.Context, arg SetContentImportTotalParams) error {
+	_, err := q.db.Exec(ctx, setContentImportTotal, arg.ID, arg.ProgressTotal)
+	return err
 }
 
 const setDraftExam = `-- name: SetDraftExam :exec

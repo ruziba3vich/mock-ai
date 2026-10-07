@@ -71,6 +71,14 @@ type LearningRepository interface {
 	ListDrafts(context.Context) ([]Draft, error)
 	SaveDraft(context.Context, string, string, Content) (string, error)
 	PublishDraft(context.Context, string) (string, error)
+	CreateImport(context.Context, string, string, int64, string, string, string, string) (string, error)
+	ListImports(context.Context, string) ([]ContentImport, error)
+	ClaimImport(context.Context) (ClaimedImport, error)
+	SetImportTotal(context.Context, string, int32) error
+	AddImportDraft(context.Context, string, string) error
+	CompleteImport(context.Context, string, []string) error
+	FailImport(context.Context, string, string) error
+	FailStaleImports(context.Context) error
 }
 
 func (s *Service) GetWorkspace(ctx context.Context, u, a string) (Workspace, error) {
@@ -126,12 +134,40 @@ func (s *Service) SaveDraft(ctx context.Context, u, id string, c Content) (strin
 				}
 			}
 			q.Options = options
+			if q.Type == "true_false_not_given" {
+				q.Options = []string{"True", "False", "Not Given"}
+			}
+			if q.Type == "yes_no_not_given" {
+				q.Options = []string{"Yes", "No", "Not Given"}
+			}
+			canonicalizeChoiceAnswers(q)
 		}
 	}
 	if e := ValidateContent(c, false); e != nil {
 		return "", e
 	}
 	return s.repository.SaveDraft(ctx, u, id, c)
+}
+
+func canonicalizeChoiceAnswers(q *ContentQuestion) {
+	if len(q.Options) == 0 {
+		return
+	}
+	for i, answer := range q.Answers {
+		for _, option := range q.Options {
+			if strings.EqualFold(strings.TrimSpace(answer), strings.TrimSpace(option)) {
+				q.Answers[i] = option
+				break
+			}
+		}
+		trimmed := strings.TrimSpace(answer)
+		if len(trimmed) == 1 {
+			index := int(strings.ToUpper(trimmed)[0]) - int('A')
+			if index >= 0 && index < len(q.Options) {
+				q.Answers[i] = q.Options[index]
+			}
+		}
+	}
 }
 func (s *Service) PublishDraft(ctx context.Context, id string) (string, error) {
 	return s.repository.PublishDraft(ctx, id)

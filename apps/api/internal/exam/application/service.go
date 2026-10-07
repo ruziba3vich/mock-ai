@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -96,9 +97,21 @@ func (s *Service) MarkAttemptReviewed(ctx context.Context, userID, attemptID str
 	return s.repository.MarkAttemptReviewed(ctx, userID, attemptID)
 }
 
-type Service struct{ repository Repository }
+type Service struct {
+	repository  Repository
+	importer    ImportProvider
+	importModel string
+	log         *slog.Logger
+}
 
 func NewService(repository Repository) *Service { return &Service{repository: repository} }
+
+func (s *Service) ConfigureImporter(provider ImportProvider, model string, logger ...*slog.Logger) {
+	s.importer, s.importModel = provider, model
+	if len(logger) > 0 {
+		s.log = logger[0]
+	}
+}
 
 func (s *Service) ListExams(ctx context.Context) ([]ExamSummary, error) {
 	return s.repository.ListExams(ctx)

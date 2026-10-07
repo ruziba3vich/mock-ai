@@ -141,4 +141,36 @@ func (h *Handler) registerLearning(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]string{"exam_id": id})
 	}))
+	mux.HandleFunc("GET /api/v1/admin/content-imports", admin(func(w http.ResponseWriter, r *http.Request) {
+		u := adminhttp.AdminFromContext(r.Context())
+		imports, e := h.service.ListImports(r.Context(), u.ID)
+		if e != nil {
+			h.fail(w, e)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"imports": imports})
+	}))
+	mux.HandleFunc("POST /api/v1/admin/content-imports", admin(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, app.MaxPDFBytes+(1<<20))
+		if e := r.ParseMultipartForm(1 << 20); e != nil {
+			writeError(w, 400, "invalid_upload", "Upload one PDF up to 50 MB")
+			return
+		}
+		if r.MultipartForm != nil {
+			defer r.MultipartForm.RemoveAll()
+		}
+		file, header, e := r.FormFile("file")
+		if e != nil {
+			writeError(w, 400, "invalid_upload", "Choose a PDF to import")
+			return
+		}
+		defer file.Close()
+		u := adminhttp.AdminFromContext(r.Context())
+		id, e := h.service.CreateImport(r.Context(), u.ID, header.Filename, r.FormValue("skills"), r.FormValue("rights_confirmed") == "true", header.Size, file)
+		if e != nil {
+			h.fail(w, e)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"id": id})
+	}))
 }

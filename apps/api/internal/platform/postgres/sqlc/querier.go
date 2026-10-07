@@ -11,15 +11,18 @@ import (
 )
 
 type Querier interface {
+	AddContentImportDraft(ctx context.Context, arg AddContentImportDraftParams) error
 	AnswerSpeaking(ctx context.Context, arg AnswerSpeakingParams) (int64, error)
 	ArchiveContentVersions(ctx context.Context, examID pgtype.UUID) error
 	AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error
+	ClaimContentImport(ctx context.Context) (ClaimContentImportRow, error)
 	ClaimReminders(ctx context.Context) ([]ClaimRemindersRow, error)
 	ClaimSpeakingLive(ctx context.Context, arg ClaimSpeakingLiveParams) (SpeakingSession, error)
 	ClaimSpeakingReport(ctx context.Context) (SpeakingSession, error)
 	ClaimSpeakingVoice(ctx context.Context) (ClaimSpeakingVoiceRow, error)
 	ClaimWriting(ctx context.Context) (WritingSubmission, error)
 	CompleteAttempt(ctx context.Context, arg CompleteAttemptParams) (Attempt, error)
+	CompleteContentImport(ctx context.Context, arg CompleteContentImportParams) error
 	CountSpeakingRequests(ctx context.Context, arg CountSpeakingRequestsParams) (int32, error)
 	CountWritingToday(ctx context.Context, userID pgtype.UUID) (int32, error)
 	CreateAdmin(ctx context.Context, arg CreateAdminParams) (pgtype.UUID, error)
@@ -29,6 +32,7 @@ type Querier interface {
 	CreateContentBand(ctx context.Context, arg CreateContentBandParams) error
 	CreateContentDraft(ctx context.Context, arg CreateContentDraftParams) (pgtype.UUID, error)
 	CreateContentExam(ctx context.Context, arg CreateContentExamParams) (pgtype.UUID, error)
+	CreateContentImport(ctx context.Context, arg CreateContentImportParams) (pgtype.UUID, error)
 	CreateContentOption(ctx context.Context, arg CreateContentOptionParams) error
 	CreateContentQuestion(ctx context.Context, arg CreateContentQuestionParams) (pgtype.UUID, error)
 	CreateContentSection(ctx context.Context, arg CreateContentSectionParams) (pgtype.UUID, error)
@@ -50,6 +54,8 @@ type Querier interface {
 	ExpireSpeakingVoices(ctx context.Context) error
 	ExpireStaleAttemptsForExam(ctx context.Context, arg ExpireStaleAttemptsForExamParams) error
 	ExpireWritingJobs(ctx context.Context) error
+	FailContentImport(ctx context.Context, arg FailContentImportParams) error
+	FailStaleContentImports(ctx context.Context) error
 	FinishSpeakingReport(ctx context.Context, arg FinishSpeakingReportParams) (int64, error)
 	FinishSpeakingVoice(ctx context.Context, arg FinishSpeakingVoiceParams) (int64, error)
 	FinishWriting(ctx context.Context, arg FinishWritingParams) (int64, error)
@@ -85,6 +91,7 @@ type Querier interface {
 	ListAttemptAnswers(ctx context.Context, attemptID pgtype.UUID) ([]AttemptAnswer, error)
 	ListAttemptScoringRows(ctx context.Context, id pgtype.UUID) ([]ListAttemptScoringRowsRow, error)
 	ListContentDrafts(ctx context.Context) ([]ListContentDraftsRow, error)
+	ListContentImports(ctx context.Context, adminAuthorID pgtype.UUID) ([]ListContentImportsRow, error)
 	ListExamSections(ctx context.Context, examVersionID pgtype.UUID) ([]ListExamSectionsRow, error)
 	ListMistakes(ctx context.Context, userID pgtype.UUID) ([]ListMistakesRow, error)
 	ListPracticeQuestions(ctx context.Context, arg ListPracticeQuestionsParams) ([]ListPracticeQuestionsRow, error)
@@ -123,6 +130,7 @@ type Querier interface {
 	SaveWorkspace(ctx context.Context, arg SaveWorkspaceParams) ([]byte, error)
 	SaveWriting(ctx context.Context, arg SaveWritingParams) (WritingSubmission, error)
 	SetAttemptAnswerScore(ctx context.Context, arg SetAttemptAnswerScoreParams) error
+	SetContentImportTotal(ctx context.Context, arg SetContentImportTotalParams) error
 	SetDraftExam(ctx context.Context, arg SetDraftExamParams) error
 	SetSpeakingLive(ctx context.Context, arg SetSpeakingLiveParams) error
 	SetSpeakingLiveQuestion(ctx context.Context, arg SetSpeakingLiveQuestionParams) (int64, error)
