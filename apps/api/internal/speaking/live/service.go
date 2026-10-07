@@ -91,6 +91,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 	defer tick.Stop()
 	phase := "connecting"
 	allowOutput := true
+	outputBytes, outputRetries := 0, 0
 	awaitPlayback := false
 	prepared := false
 	finished := false
@@ -100,6 +101,15 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 	audioStarted := time.Now()
 	received := 0
 	lastControl := time.Time{}
+	spokenQuestion := func() string {
+		if finished {
+			return "Thank you. That completes your interview. Your report will be prepared shortly."
+		}
+		if session.Turns[pos].Part == 2 && prepared {
+			return "Your preparation time is over. Please begin your two-minute answer now."
+		}
+		return session.Turns[pos].Prompt
+	}
 	state := func() error {
 		return write(ctx, client, map[string]any{"type": "state", "phase": phase, "position": pos, "part": session.Turns[pos].Part, "question": session.Turns[pos].Prompt, "prepare_until": prepUntil.UnixMilli()})
 	}
@@ -118,6 +128,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 			if phase == "preparing" && !time.Now().Before(prepUntil) {
 				phase = "examiner"
 				allowOutput = true
+				outputBytes, outputRetries = 0, 0
 				prepared = true
 				prepUntil = time.Time{}
 				if e = state(); e != nil {
@@ -167,6 +178,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 					transcript = ""
 					prepared = false
 					allowOutput = true
+					outputBytes, outputRetries = 0, 0
 					phase = "examiner"
 					if e = state(); e != nil {
 						return e
@@ -221,6 +233,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 				}
 				lastControl = time.Now()
 				allowOutput = true
+				outputBytes, outputRetries = 0, 0
 				phase = "examiner"
 				_ = state()
 				if e = write(ctx, upstream, Control("Repeat the current question without advancing: "+session.Turns[pos].Prompt)); e != nil {
@@ -293,10 +306,14 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 			}
 			for _, call := range msg.ToolCall.FunctionCalls {
 				response := map[string]any{"instruction": "Stay silent and wait for the student to finish."}
+				if phase == "examiner" {
+					response = map[string]any{"question": spokenQuestion(), "instruction": "The controller has already approved this examiner turn. Speak the supplied words aloud now; do not call another tool or wait for a student answer before asking the question."}
+				}
 				if phase == "listening" {
 					switch call.Name {
 					case "repeat_question":
 						allowOutput = true
+						outputBytes, outputRetries = 0, 0
 						phase = "examiner"
 						response = map[string]any{"question": session.Turns[pos].Prompt}
 					case "advance_question", "finish_interview":
@@ -323,6 +340,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 							pcm = nil
 							transcript = ""
 							allowOutput = true
+							outputBytes, outputRetries = 0, 0
 							phase = "examiner"
 							if final {
 								finished = true
@@ -358,6 +376,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 						if !strings.HasPrefix(part.InlineData.MimeType, "audio/pcm") {
 							return d.ErrUnavailable
 						}
+						outputBytes += len(b)
 						c, stop := context.WithTimeout(ctx, 10*time.Second)
 						e = client.Write(c, websocket.MessageBinary, b)
 						stop()
@@ -368,6 +387,18 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 				}
 			}
 			if content.TurnComplete && allowOutput {
+				// Some provider turns contain only tool calls. Never tell the
+				// browser to start listening when no question was actually spoken.
+				if outputBytes < 4800 {
+					if outputRetries >= 2 {
+						return d.ErrUnavailable
+					}
+					outputRetries++
+					if e = write(ctx, upstream, Control("No audible examiner response was received. Do not call tools. Speak these approved words aloud now: "+spokenQuestion())); e != nil {
+						return e
+					}
+					continue
+				}
 				awaitPlayback = true
 				if e = write(ctx, client, map[string]string{"type": "audio_end"}); e != nil {
 					return e

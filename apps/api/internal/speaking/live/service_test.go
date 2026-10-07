@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"github.com/coder/websocket"
@@ -98,6 +99,14 @@ func TestLiveProgressionWaitAndOutputGate(t *testing.T) {
 	receive(client)
 	receive(provider)
 	send(provider, map[string]any{"serverContent": map[string]bool{"turnComplete": true}})
+	// Empty provider/tool-only turns trigger a bounded retry, not listening.
+	if receive(provider)["clientContent"] == nil {
+		t.Fatal("missing empty-audio retry")
+	}
+	send(provider, map[string]any{"serverContent": map[string]any{"modelTurn": map[string]any{"parts": []any{map[string]any{"inlineData": map[string]string{"data": base64.StdEncoding.EncodeToString(make([]byte, 4800)), "mimeType": "audio/pcm;rate=24000"}}}}, "turnComplete": true}})
+	if kind, _, err := client.Read(ctx); err != nil || kind != websocket.MessageBinary {
+		t.Fatal("examiner audio missing", err)
+	}
 	receive(client)
 	send(client, map[string]string{"type": "playback_done"})
 	if receive(client)["phase"] != "listening" {
