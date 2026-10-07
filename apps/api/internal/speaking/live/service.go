@@ -98,10 +98,15 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 	var prepUntil time.Time
 	var pcm []byte
 	transcript := ""
+	helpStart := 0
+	helpSpeech := ""
 	audioStarted := time.Now()
 	received := 0
 	lastControl := time.Time{}
 	spokenQuestion := func() string {
+		if helpSpeech != "" {
+			return helpSpeech
+		}
 		if finished {
 			return "Thank you. That completes your interview. Your report will be prepared shortly."
 		}
@@ -156,7 +161,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 				// A hard question budget bounds spend and ends the timed long turn.
 				// Never manufacture an answer or score when no speech was captured.
 				if len(pcm)+len(p.data) > int(session.Turns[pos].Seconds)*32000 {
-					if !Meaningful(transcript) {
+					if !Meaningful(transcript[helpStart:]) {
 						return d.ErrInvalid
 					}
 					next := ""
@@ -176,6 +181,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 					pos++
 					pcm = nil
 					transcript = ""
+					helpStart = 0
 					prepared = false
 					allowOutput = true
 					outputBytes, outputRetries = 0, 0
@@ -216,6 +222,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 					return nil
 				}
 				allowOutput = false
+				helpSpeech = ""
 				if session.Turns[pos].Part == 2 && !prepared {
 					phase = "preparing"
 					prepUntil = time.Now().Add(time.Minute)
@@ -277,7 +284,8 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 						ID   string `json:"id"`
 						Name string `json:"name"`
 						Args struct {
-							Question string `json:"question"`
+							Question    string `json:"question"`
+							Explanation string `json:"explanation"`
 						} `json:"args"`
 					}
 				} `json:"toolCall"`
@@ -311,13 +319,30 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 				}
 				if phase == "listening" {
 					switch call.Name {
-					case "repeat_question":
+					case "repeat_question", "clarify_question":
+						// Help requests are conversational turns, never scored answers
+						// or permission to advance based on an earlier transcript.
+						if strings.TrimSpace(transcript[helpStart:]) == "" {
+							break
+						}
+						if _, err := d.ValidateAudio(Wave(pcm), session.Turns[pos].Seconds); err != nil {
+							break
+						}
+						helpSpeech = session.Turns[pos].Prompt
+						if call.Name == "clarify_question" {
+							explanation := strings.TrimSpace(call.Args.Explanation)
+							if len(explanation) < 5 || len(explanation) > 700 {
+								break
+							}
+							helpSpeech = explanation
+						}
+						helpStart = len(transcript)
 						allowOutput = true
 						outputBytes, outputRetries = 0, 0
 						phase = "examiner"
-						response = map[string]any{"question": session.Turns[pos].Prompt}
+						response = map[string]any{"question": helpSpeech, "instruction": "Say this aloud, then listen for the answer to the SAME question. Do not advance, give examples, suggest an answer, or evaluate the student."}
 					case "advance_question", "finish_interview":
-						valid := Meaningful(transcript)
+						valid := Meaningful(transcript[helpStart:])
 						if _, err := d.ValidateAudio(Wave(pcm), session.Turns[pos].Seconds); err != nil {
 							valid = false
 						}
@@ -339,6 +364,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 							session.Turns[pos].Answered = true
 							pcm = nil
 							transcript = ""
+							helpStart = 0
 							allowOutput = true
 							outputBytes, outputRetries = 0, 0
 							phase = "examiner"

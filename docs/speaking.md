@@ -16,6 +16,10 @@ Live audio requires HTTPS (localhost permitted), AudioContext/AudioWorklet, WebS
 
 ## Live transport and turn-taking
 
+The active interview uses a full-screen microphone view, not a question form. Parts 1 and 3 questions and the question counter are not rendered. Part 2 retains its cue card during preparation and the long turn. The microphone connects/pauses; the close control returns to Speaking history with an unfinished-answer warning. Native modal focus containment keeps background navigation out of the interview.
+
+Students can ask aloud for repetition or clarification. `repeat_question` repeats the current prompt; `clarify_question` supplies a short neutral explanation/rephrasing without coaching or sample answers. Both stay on the same question and require new answer speech before advancement; they never persist a completed answer themselves. Audio evidence retains the conversation, and the evaluator distinguishes legitimate help requests from substantive answers. The old text-based Repeat control is no longer shown.
+
 `POST /api/v1/speaking/live/sessions` with `{"consent":true}` creates a live session. `GET /api/v1/speaking/live/sessions/{id}/stream` upgrades to WebSocket, checking both the student cookie and exact Origin. The backend proxies Gemini; keys never reach the browser. Input binary frames contain PCM16 little-endian mono 16 kHz, normally 100 ms/3200 bytes. Output binary frames are PCM16 mono 24 kHz. JSON events: `state`, `audio_end`, `interrupted`, `heartbeat`, `done`. Client controls: `playback_done`, `repeat`, `done_speaking`.
 
 Native VAD uses low speech-start/end sensitivity and 3500 ms silence duration. That silence is an opportunity for semantic judgment, not permission to advance. The model must call `wait_for_student` for incomplete thoughts/thinking/noise, or `advance_question` after a complete substantive answer. Server output gating suppresses unapproved speech; progression requires meaningful transcription plus valid audio and is saved before another question. Thinking pauses remain within the same answer. Model-based turn detection is probabilistic, not a guarantee about intent. At the two-minute answer cap, the controller moves on only if a valid answer exists. Part 2 preparation is timed on the server.
@@ -52,6 +56,8 @@ The live migration refuses downgrade while live interviews exist, preventing sil
 The report includes four criterion estimates (fluency/coherence, vocabulary, grammar, pronunciation), overall Speaking estimate computed server-side, transcripts, strengths, answer development feedback, timestamped issues and practice steps. Pronunciation is assessed from sound and intelligibility, never inferred solely from a transcript or penalized for a non-native accent. Invalid quotes, timestamps, criterion keys and band values reject the report. Under 60 seconds of audio, fewer than three answers, or missing any part suppresses all band estimates. No four-skill overall IELTS band is invented.
 
 ## Verification
+
+For spoken-help coverage, also set `SPEAKING_HELP_FIXTURES=/absolute/help-directory` containing 16 kHz WAV files `repeat.wav` (a request to repeat) and `clarify.wav` (a request to explain the current question). The real-provider test requires audible replies, no question advancement for either request, and hidden spoken questions in the voice interface.
 
 `go test ./...` covers waveform/report validation and provider contracts. `MOCKAI_INTEGRATION=1 DATABASE_URL=... go test ./...` requires a fresh disposable `mock_ai_learning_test` database; it tests authenticated HTTP, ownership, CSRF, encryption/decryption, ordering, worker execution, computed scores, expiry, usage limits, and migration rollback/reapply. Integration scoring uses a deterministic provider double; it does not validate AI assessment accuracy.
 

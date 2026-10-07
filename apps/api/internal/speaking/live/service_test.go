@@ -128,6 +128,33 @@ func TestLiveProgressionWaitAndOutputGate(t *testing.T) {
 		}
 		receive(provider)
 	}
+	// Spoken help is answered at the same position; it cannot become an answer.
+	for _, name := range []string{"repeat_question", "clarify_question"} {
+		send(provider, map[string]any{"serverContent": map[string]any{"inputTranscription": map[string]string{"text": " Could you please explain the question?"}}})
+		send(provider, map[string]any{"toolCall": map[string]any{"functionCalls": []any{map[string]any{"id": "help", "name": name, "args": map[string]string{"explanation": "I am asking what you like about your work or studies."}}}}})
+		receive(provider)
+		state := receive(client)
+		if state["position"] != float64(0) || state["phase"] != "examiner" {
+			t.Fatal("help request advanced or stayed silent")
+		}
+		select {
+		case <-repo.saves:
+			t.Fatal("help request was saved as answer")
+		default:
+		}
+		send(provider, map[string]any{"serverContent": map[string]any{"modelTurn": map[string]any{"parts": []any{map[string]any{"inlineData": map[string]string{"data": base64.StdEncoding.EncodeToString(make([]byte, 4800)), "mimeType": "audio/pcm;rate=24000"}}}}, "turnComplete": true}})
+		if kind, _, err := client.Read(ctx); err != nil || kind != websocket.MessageBinary {
+			t.Fatal("help audio missing", err)
+		}
+		receive(client)
+		send(client, map[string]string{"type": "playback_done"})
+		receive(client)
+		tool("advance_question")
+		receive(provider)
+		if receive(client)["position"] != float64(0) {
+			t.Fatal("old help transcript advanced interview")
+		}
+	}
 	send(provider, map[string]any{"serverContent": map[string]any{"inputTranscription": map[string]string{"text": "I study computer science because"}}})
 	tool("wait_for_student")
 	receive(provider)
