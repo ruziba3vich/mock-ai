@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	app "github.com/own/mock-ai/apps/api/internal/admin/application"
@@ -51,4 +52,94 @@ func (r *Repository) Session(ctx context.Context, hash string) (app.Admin, error
 }
 func (r *Repository) DeleteSession(ctx context.Context, hash string) error {
 	return r.q.DeleteAdminSession(ctx, hash)
+}
+
+func (r *Repository) Dashboard(ctx context.Context) (app.Dashboard, error) {
+	s, e := r.q.AdminDashboardSummary(ctx)
+	if e != nil {
+		return app.Dashboard{}, e
+	}
+	trend, e := r.q.AdminDashboardTrend(ctx)
+	if e != nil {
+		return app.Dashboard{}, e
+	}
+	counts, e := r.q.AdminContentBreakdown(ctx)
+	if e != nil {
+		return app.Dashboard{}, e
+	}
+	avg, _ := s.AverageBand.Float64Value()
+	out := app.Dashboard{Summary: app.DashboardSummary{Users: s.Users, NewUsers7d: s.NewUsers7d, ActiveUsers7d: s.ActiveUsers7d, CompletedMocks: s.CompletedMocks, AverageBand: avg.Float64, WritingReports: s.WritingReports, SpeakingReports: s.SpeakingReports, PublishedExams: s.PublishedExams, ExamDrafts: s.ExamDrafts, PublishedContent: s.PublishedContent, ManagedDrafts: s.ManagedDrafts}, Trend: make([]app.DashboardDay, 0, len(trend)), Content: make([]app.ContentCount, 0, len(counts))}
+	for _, v := range trend {
+		out.Trend = append(out.Trend, app.DashboardDay{Date: v.ActivityDate.Time.Format("2006-01-02"), Signups: v.Signups, ActiveStudents: v.ActiveStudents, Attempts: v.Attempts})
+	}
+	for _, v := range counts {
+		out.Content = append(out.Content, app.ContentCount{Kind: v.Kind, Status: v.Status, Count: v.Count})
+	}
+	return out, nil
+}
+func content(v db.ManagedContent) app.ManagedContent {
+	out := app.ManagedContent{ID: str(v.ID), Kind: v.Kind, Slug: v.Slug, Title: v.Title, Summary: v.Summary, Status: v.Status, SortOrder: v.SortOrder, Data: json.RawMessage(v.Data), CreatedAt: v.CreatedAt.Time, UpdatedAt: v.UpdatedAt.Time}
+	if v.StartsAt.Valid {
+		t := v.StartsAt.Time
+		out.StartsAt = &t
+	}
+	if v.EndsAt.Valid {
+		t := v.EndsAt.Time
+		out.EndsAt = &t
+	}
+	return out
+}
+func nullableTime(v *time.Time) pgtype.Timestamptz {
+	if v == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *v, Valid: true}
+}
+func (r *Repository) ListContent(ctx context.Context, kind string) ([]app.ManagedContent, error) {
+	rows, e := r.q.ListManagedContent(ctx, kind)
+	if e != nil {
+		return nil, e
+	}
+	out := make([]app.ManagedContent, 0, len(rows))
+	for _, v := range rows {
+		out = append(out, content(v))
+	}
+	return out, nil
+}
+func (r *Repository) CreateContent(ctx context.Context, adminID string, v app.ManagedContent) (app.ManagedContent, error) {
+	a, e := id(adminID)
+	if e != nil {
+		return app.ManagedContent{}, e
+	}
+	row, e := r.q.CreateManagedContent(ctx, db.CreateManagedContentParams{Kind: v.Kind, Slug: v.Slug, Title: v.Title, Summary: v.Summary, Status: v.Status, SortOrder: v.SortOrder, StartsAt: nullableTime(v.StartsAt), EndsAt: nullableTime(v.EndsAt), Data: v.Data, CreatedBy: a})
+	if e != nil {
+		return app.ManagedContent{}, e
+	}
+	return content(row), nil
+}
+func (r *Repository) UpdateContent(ctx context.Context, adminID string, v app.ManagedContent) (app.ManagedContent, error) {
+	a, e := id(adminID)
+	if e != nil {
+		return app.ManagedContent{}, e
+	}
+	contentID, e := id(v.ID)
+	if e != nil {
+		return app.ManagedContent{}, app.ErrContentNotFound
+	}
+	row, e := r.q.UpdateManagedContent(ctx, db.UpdateManagedContentParams{ID: contentID, Kind: v.Kind, Slug: v.Slug, Title: v.Title, Summary: v.Summary, Status: v.Status, SortOrder: v.SortOrder, StartsAt: nullableTime(v.StartsAt), EndsAt: nullableTime(v.EndsAt), Data: v.Data, UpdatedBy: a})
+	if e != nil {
+		return app.ManagedContent{}, e
+	}
+	return content(row), nil
+}
+func (r *Repository) DeleteContent(ctx context.Context, value string) error {
+	v, e := id(value)
+	if e != nil {
+		return app.ErrContentNotFound
+	}
+	n, e := r.q.DeleteManagedContent(ctx, v)
+	if e == nil && n == 0 {
+		return app.ErrContentNotFound
+	}
+	return e
 }

@@ -109,6 +109,35 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/admin/me", h.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]any{"admin": AdminFromContext(r.Context())})
 	})))
+	mux.Handle("GET /api/v1/admin/dashboard", h.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v, e := h.service.Dashboard(r.Context())
+		if e != nil {
+			fail(w, 500, "Dashboard unavailable")
+			return
+		}
+		respond(w, 200, v)
+	})))
+	mux.Handle("GET /api/v1/admin/managed-content", h.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v, e := h.service.ListContent(r.Context(), r.URL.Query().Get("kind"))
+		if e != nil {
+			fail(w, 422, e.Error())
+			return
+		}
+		respond(w, 200, map[string]any{"items": v})
+	})))
+	mux.Handle("POST /api/v1/admin/managed-content", h.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.saveContent(w, r, false) })))
+	mux.Handle("PUT /api/v1/admin/managed-content/{content_id}", h.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.saveContent(w, r, true) })))
+	mux.Handle("DELETE /api/v1/admin/managed-content/{content_id}", h.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if e := h.service.DeleteContent(r.Context(), r.PathValue("content_id")); e != nil {
+			if errors.Is(e, app.ErrContentNotFound) {
+				fail(w, 404, e.Error())
+			} else {
+				fail(w, 500, "Could not delete content")
+			}
+			return
+		}
+		respond(w, 204, nil)
+	})))
 	mux.HandleFunc("POST /api/v1/admin/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		if !h.sameOrigin(w, r) {
 			return
@@ -122,4 +151,34 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		h.cookie(w, "", -1)
 		respond(w, 204, nil)
 	})
+}
+
+func (h *Handler) saveContent(w http.ResponseWriter, r *http.Request, update bool) {
+	var input app.ManagedContent
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 110000))
+	decoder.DisallowUnknownFields()
+	if e := decoder.Decode(&input); e != nil {
+		fail(w, 400, "Invalid content request")
+		return
+	}
+	if update {
+		input.ID = r.PathValue("content_id")
+	} else {
+		input.ID = ""
+	}
+	admin := AdminFromContext(r.Context())
+	saved, e := h.service.SaveContent(r.Context(), admin.ID, input)
+	if e != nil {
+		if errors.Is(e, app.ErrInvalidContent) {
+			fail(w, 422, e.Error())
+		} else {
+			fail(w, 500, "Could not save content")
+		}
+		return
+	}
+	status := 200
+	if !update {
+		status = 201
+	}
+	respond(w, status, saved)
 }

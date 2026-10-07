@@ -20,3 +20,32 @@ WHERE s.token_hash=$1 AND s.expires_at>now() AND NOT a.disabled;
 
 -- name: DeleteAdminSession :exec
 DELETE FROM admin_sessions WHERE token_hash=$1;
+
+-- name: AdminDashboardSummary :one
+SELECT
+ (SELECT count(*) FROM users WHERE deleted_at IS NULL)::integer AS users,
+ (SELECT count(*) FROM users WHERE deleted_at IS NULL AND created_at>=now()-interval '7 days')::integer AS new_users_7d,
+ (SELECT count(DISTINCT user_id) FROM (
+   SELECT user_id FROM community_activity WHERE occurred_at>=now()-interval '7 days'
+   UNION ALL SELECT user_id FROM writing_submissions WHERE updated_at>=now()-interval '7 days'
+   UNION ALL SELECT user_id FROM speaking_sessions WHERE updated_at>=now()-interval '7 days'
+ ) active)::integer AS active_users_7d,
+ (SELECT count(*) FROM attempts WHERE status='scored')::integer AS completed_mocks,
+ coalesce((SELECT round(avg(band_score),1) FROM attempts WHERE status='scored'),0)::numeric AS average_band,
+ (SELECT count(*) FROM writing_submissions WHERE status='completed')::integer AS writing_reports,
+ (SELECT count(*) FROM speaking_sessions WHERE status='completed')::integer AS speaking_reports,
+ (SELECT count(*) FROM exam_versions WHERE status='published')::integer AS published_exams,
+ (SELECT count(*) FROM content_drafts)::integer AS exam_drafts,
+ (SELECT count(*) FROM managed_content WHERE status='published')::integer AS published_content,
+ (SELECT count(*) FROM managed_content WHERE status='draft')::integer AS managed_drafts;
+
+-- name: AdminDashboardTrend :many
+WITH days AS (SELECT generate_series(current_date-13,current_date,interval '1 day')::date AS activity_date),
+signups AS (SELECT created_at::date activity_date,count(*)::integer value FROM users WHERE created_at>=current_date-13 GROUP BY 1),
+activity AS (SELECT occurred_at::date activity_date,count(DISTINCT user_id)::integer value FROM community_activity WHERE occurred_at>=current_date-13 GROUP BY 1),
+attempts_by_day AS (SELECT started_at::date activity_date,count(*)::integer value FROM attempts WHERE started_at>=current_date-13 GROUP BY 1)
+SELECT d.activity_date,coalesce(s.value,0)::integer AS signups,coalesce(a.value,0)::integer AS active_students,coalesce(t.value,0)::integer AS attempts
+FROM days d LEFT JOIN signups s USING(activity_date) LEFT JOIN activity a USING(activity_date) LEFT JOIN attempts_by_day t USING(activity_date) ORDER BY d.activity_date;
+
+-- name: AdminContentBreakdown :many
+SELECT kind,status,count(*)::integer AS count FROM managed_content GROUP BY kind,status ORDER BY kind,status;

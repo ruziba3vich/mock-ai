@@ -98,6 +98,24 @@ type VoiceJob struct {
 	Examiner  Examiner
 }
 
+type PlanData struct {
+	Turns []Turn `json:"turns"`
+}
+
+func ParsePlan(title string, raw []byte) (string, []Turn, error) {
+	var v PlanData
+	if json.Unmarshal(raw, &v) != nil || len(v.Turns) != 11 {
+		return "", nil, ErrUnavailable
+	}
+	for i := range v.Turns {
+		v.Turns[i].Position = int32(i)
+		if strings.TrimSpace(v.Turns[i].Prompt) == "" || v.Turns[i].Part < 1 || v.Turns[i].Part > 3 || v.Turns[i].Seconds < 20 || v.Turns[i].Seconds > 120 {
+			return "", nil, ErrUnavailable
+		}
+	}
+	return title, v.Turns, nil
+}
+
 func NewPlan() (string, []Turn, error) {
 	n, e := rand.Int(rand.Reader, big.NewInt(2))
 	if e != nil {

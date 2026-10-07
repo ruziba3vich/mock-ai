@@ -10,6 +10,7 @@ import (
 
 type Repository interface {
 	Available(context.Context) (bool, error)
+	Plan(context.Context) (string, []d.Turn, error)
 	Create(context.Context, string, string, d.Examiner, string, []d.Turn) (d.Session, error)
 	Get(context.Context, string, string) (d.Session, error)
 	List(context.Context, string) ([]d.Session, error)
@@ -50,7 +51,7 @@ func (s *Service) Create(ctx context.Context, u string, consent bool) (d.Session
 	if e != nil {
 		return d.Session{}, e
 	}
-	topic, turns, e := d.NewPlan()
+	topic, turns, e := s.Repo.Plan(ctx)
 	if e != nil {
 		return d.Session{}, e
 	}

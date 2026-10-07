@@ -12,6 +12,9 @@ import (
 
 type Querier interface {
 	AddContentImportDraft(ctx context.Context, arg AddContentImportDraftParams) error
+	AdminContentBreakdown(ctx context.Context) ([]AdminContentBreakdownRow, error)
+	AdminDashboardSummary(ctx context.Context) (AdminDashboardSummaryRow, error)
+	AdminDashboardTrend(ctx context.Context) ([]AdminDashboardTrendRow, error)
 	AnswerSpeaking(ctx context.Context, arg AnswerSpeakingParams) (int64, error)
 	ArchiveContentVersions(ctx context.Context, examID pgtype.UUID) error
 	AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error
@@ -37,6 +40,7 @@ type Querier interface {
 	CreateContentQuestion(ctx context.Context, arg CreateContentQuestionParams) (pgtype.UUID, error)
 	CreateContentSection(ctx context.Context, arg CreateContentSectionParams) (pgtype.UUID, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (UserIdentity, error)
+	CreateManagedContent(ctx context.Context, arg CreateManagedContentParams) (ManagedContent, error)
 	CreatePasswordCredential(ctx context.Context, arg CreatePasswordCredentialParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateSpeaking(ctx context.Context, arg CreateSpeakingParams) (SpeakingSession, error)
@@ -45,6 +49,7 @@ type Querier interface {
 	CreateVerifiedUser(ctx context.Context, arg CreateVerifiedUserParams) (User, error)
 	CreateWriting(ctx context.Context, arg CreateWritingParams) (WritingSubmission, error)
 	DeleteAdminSession(ctx context.Context, tokenHash string) error
+	DeleteManagedContent(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteSpeaking(ctx context.Context, arg DeleteSpeakingParams) (int64, error)
 	DeleteWriting(ctx context.Context, arg DeleteWritingParams) (int64, error)
 	DisableReminder(ctx context.Context, userID pgtype.UUID) error
@@ -93,8 +98,10 @@ type Querier interface {
 	ListContentDrafts(ctx context.Context) ([]ListContentDraftsRow, error)
 	ListContentImports(ctx context.Context, adminAuthorID pgtype.UUID) ([]ListContentImportsRow, error)
 	ListExamSections(ctx context.Context, examVersionID pgtype.UUID) ([]ListExamSectionsRow, error)
+	ListManagedContent(ctx context.Context, kind string) ([]ManagedContent, error)
 	ListMistakes(ctx context.Context, userID pgtype.UUID) ([]ListMistakesRow, error)
 	ListPracticeQuestions(ctx context.Context, arg ListPracticeQuestionsParams) ([]ListPracticeQuestionsRow, error)
+	ListPublishedContent(ctx context.Context, kind string) ([]ManagedContent, error)
 	ListPublishedExams(ctx context.Context) ([]ListPublishedExamsRow, error)
 	ListQuestionOptions(ctx context.Context, questionID pgtype.UUID) ([]QuestionOption, error)
 	ListSectionQuestions(ctx context.Context, sectionID pgtype.UUID) ([]ListSectionQuestionsRow, error)
@@ -113,6 +120,7 @@ type Querier interface {
 	QueueSpeakingReport(ctx context.Context, id pgtype.UUID) (SpeakingSession, error)
 	QueueSpeakingVoice(ctx context.Context, arg QueueSpeakingVoiceParams) (int64, error)
 	QueueWriting(ctx context.Context, arg QueueWritingParams) (WritingSubmission, error)
+	RandomSpeakingPlan(ctx context.Context) (RandomSpeakingPlanRow, error)
 	RecordAttemptReview(ctx context.Context, arg RecordAttemptReviewParams) (pgtype.UUID, error)
 	RecordMistakeRetry(ctx context.Context, arg RecordMistakeRetryParams) error
 	RecordPracticeAnswer(ctx context.Context, arg RecordPracticeAnswerParams) error
@@ -140,6 +148,7 @@ type Querier interface {
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	UpdateContentDraft(ctx context.Context, arg UpdateContentDraftParams) (pgtype.UUID, error)
 	UpdateExternalProfile(ctx context.Context, arg UpdateExternalProfileParams) (User, error)
+	UpdateManagedContent(ctx context.Context, arg UpdateManagedContentParams) (ManagedContent, error)
 	UpdateStudentProfile(ctx context.Context, arg UpdateStudentProfileParams) (StudentProfile, error)
 	WritingKeyAvailable(ctx context.Context) (bool, error)
 }

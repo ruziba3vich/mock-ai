@@ -570,6 +570,23 @@ type ExamVersion struct {
 	Purpose         ExamPurpose        `json:"purpose"`
 }
 
+type ManagedContent struct {
+	ID        pgtype.UUID        `json:"id"`
+	Kind      string             `json:"kind"`
+	Slug      string             `json:"slug"`
+	Title     string             `json:"title"`
+	Summary   string             `json:"summary"`
+	Status    string             `json:"status"`
+	SortOrder int32              `json:"sort_order"`
+	StartsAt  pgtype.Timestamptz `json:"starts_at"`
+	EndsAt    pgtype.Timestamptz `json:"ends_at"`
+	Data      []byte             `json:"data"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+	UpdatedBy pgtype.UUID        `json:"updated_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type MistakeRetry struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`

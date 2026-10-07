@@ -47,7 +47,7 @@ func (h *Handler) registerLive(mux *http.ServeMux) {
 			fail(w, e)
 			return
 		}
-		topic, turns, e := d.NewPlan()
+		topic, turns, e := h.s.Repo.Plan(r.Context())
 		if e != nil {
 			fail(w, e)
 			return

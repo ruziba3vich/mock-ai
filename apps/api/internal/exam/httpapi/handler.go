@@ -44,9 +44,19 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	handle("GET /api/v1/me/attempts", h.history)
 	handle("GET /api/v1/me/progress", h.progress)
 	handle("GET /api/v1/practice/questions", h.listPracticeQuestions)
+	handle("GET /api/v1/content", h.listPublishedContent)
 	handle("POST /api/v1/practice/questions/{question_id}/check", h.checkPracticeAnswer)
 	handle("GET /api/v1/me/study-plan", h.getStudyPlan)
 	handle("PUT /api/v1/me/study-profile", h.updateStudyProfile)
+}
+
+func (h *Handler) listPublishedContent(w http.ResponseWriter, r *http.Request) {
+	items, e := h.service.ListPublishedContent(r.Context(), r.URL.Query().Get("kind"))
+	if e != nil {
+		h.fail(w, e)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *Handler) listPracticeQuestions(w http.ResponseWriter, r *http.Request) {

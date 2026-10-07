@@ -11,6 +11,129 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adminContentBreakdown = `-- name: AdminContentBreakdown :many
+SELECT kind,status,count(*)::integer AS count FROM managed_content GROUP BY kind,status ORDER BY kind,status
+`
+
+type AdminContentBreakdownRow struct {
+	Kind   string `json:"kind"`
+	Status string `json:"status"`
+	Count  int32  `json:"count"`
+}
+
+func (q *Queries) AdminContentBreakdown(ctx context.Context) ([]AdminContentBreakdownRow, error) {
+	rows, err := q.db.Query(ctx, adminContentBreakdown)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminContentBreakdownRow{}
+	for rows.Next() {
+		var i AdminContentBreakdownRow
+		if err := rows.Scan(&i.Kind, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminDashboardSummary = `-- name: AdminDashboardSummary :one
+SELECT
+ (SELECT count(*) FROM users WHERE deleted_at IS NULL)::integer AS users,
+ (SELECT count(*) FROM users WHERE deleted_at IS NULL AND created_at>=now()-interval '7 days')::integer AS new_users_7d,
+ (SELECT count(DISTINCT user_id) FROM (
+   SELECT user_id FROM community_activity WHERE occurred_at>=now()-interval '7 days'
+   UNION ALL SELECT user_id FROM writing_submissions WHERE updated_at>=now()-interval '7 days'
+   UNION ALL SELECT user_id FROM speaking_sessions WHERE updated_at>=now()-interval '7 days'
+ ) active)::integer AS active_users_7d,
+ (SELECT count(*) FROM attempts WHERE status='scored')::integer AS completed_mocks,
+ coalesce((SELECT round(avg(band_score),1) FROM attempts WHERE status='scored'),0)::numeric AS average_band,
+ (SELECT count(*) FROM writing_submissions WHERE status='completed')::integer AS writing_reports,
+ (SELECT count(*) FROM speaking_sessions WHERE status='completed')::integer AS speaking_reports,
+ (SELECT count(*) FROM exam_versions WHERE status='published')::integer AS published_exams,
+ (SELECT count(*) FROM content_drafts)::integer AS exam_drafts,
+ (SELECT count(*) FROM managed_content WHERE status='published')::integer AS published_content,
+ (SELECT count(*) FROM managed_content WHERE status='draft')::integer AS managed_drafts
+`
+
+type AdminDashboardSummaryRow struct {
+	Users            int32          `json:"users"`
+	NewUsers7d       int32          `json:"new_users_7d"`
+	ActiveUsers7d    int32          `json:"active_users_7d"`
+	CompletedMocks   int32          `json:"completed_mocks"`
+	AverageBand      pgtype.Numeric `json:"average_band"`
+	WritingReports   int32          `json:"writing_reports"`
+	SpeakingReports  int32          `json:"speaking_reports"`
+	PublishedExams   int32          `json:"published_exams"`
+	ExamDrafts       int32          `json:"exam_drafts"`
+	PublishedContent int32          `json:"published_content"`
+	ManagedDrafts    int32          `json:"managed_drafts"`
+}
+
+func (q *Queries) AdminDashboardSummary(ctx context.Context) (AdminDashboardSummaryRow, error) {
+	row := q.db.QueryRow(ctx, adminDashboardSummary)
+	var i AdminDashboardSummaryRow
+	err := row.Scan(
+		&i.Users,
+		&i.NewUsers7d,
+		&i.ActiveUsers7d,
+		&i.CompletedMocks,
+		&i.AverageBand,
+		&i.WritingReports,
+		&i.SpeakingReports,
+		&i.PublishedExams,
+		&i.ExamDrafts,
+		&i.PublishedContent,
+		&i.ManagedDrafts,
+	)
+	return i, err
+}
+
+const adminDashboardTrend = `-- name: AdminDashboardTrend :many
+WITH days AS (SELECT generate_series(current_date-13,current_date,interval '1 day')::date AS activity_date),
+signups AS (SELECT created_at::date activity_date,count(*)::integer value FROM users WHERE created_at>=current_date-13 GROUP BY 1),
+activity AS (SELECT occurred_at::date activity_date,count(DISTINCT user_id)::integer value FROM community_activity WHERE occurred_at>=current_date-13 GROUP BY 1),
+attempts_by_day AS (SELECT started_at::date activity_date,count(*)::integer value FROM attempts WHERE started_at>=current_date-13 GROUP BY 1)
+SELECT d.activity_date,coalesce(s.value,0)::integer AS signups,coalesce(a.value,0)::integer AS active_students,coalesce(t.value,0)::integer AS attempts
+FROM days d LEFT JOIN signups s USING(activity_date) LEFT JOIN activity a USING(activity_date) LEFT JOIN attempts_by_day t USING(activity_date) ORDER BY d.activity_date
+`
+
+type AdminDashboardTrendRow struct {
+	ActivityDate   pgtype.Date `json:"activity_date"`
+	Signups        int32       `json:"signups"`
+	ActiveStudents int32       `json:"active_students"`
+	Attempts       int32       `json:"attempts"`
+}
+
+func (q *Queries) AdminDashboardTrend(ctx context.Context) ([]AdminDashboardTrendRow, error) {
+	rows, err := q.db.Query(ctx, adminDashboardTrend)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminDashboardTrendRow{}
+	for rows.Next() {
+		var i AdminDashboardTrendRow
+		if err := rows.Scan(
+			&i.ActivityDate,
+			&i.Signups,
+			&i.ActiveStudents,
+			&i.Attempts,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createAdmin = `-- name: CreateAdmin :one
 INSERT INTO admins(email,display_name,password_hash) VALUES($1,$2,$3) RETURNING id
 `
