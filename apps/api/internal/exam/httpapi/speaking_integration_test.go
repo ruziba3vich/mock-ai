@@ -5,21 +5,137 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"github.com/coder/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
 	app "github.com/own/mock-ai/apps/api/internal/speaking/application"
 	d "github.com/own/mock-ai/apps/api/internal/speaking/domain"
+	speakingpg "github.com/own/mock-ai/apps/api/internal/speaking/postgres"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
 
 type speakingTestProvider struct{}
 
+func (speakingTestProvider) ConnectLive(context.Context) (*websocket.Conn, error) {
+	return nil, d.ErrUnavailable
+}
+
+func testLiveSpeakingHTTP(t *testing.T, h http.Handler, owner, other *http.Cookie) {
+	t.Helper()
+	request := func(method, path, origin string, cookie *http.Cookie, body string, code int) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != code {
+			t.Fatalf("live %s: got %d want %d: %s", path, w.Code, code, w.Body.String())
+		}
+		return w
+	}
+	base := "/api/v1/speaking/live/sessions"
+	request("POST", base, "http://localhost", nil, `{"consent":true}`, 401)
+	request("POST", base, "http://localhost", owner, `{"consent":false}`, 422)
+	var v d.Session
+	_ = json.Unmarshal(request("POST", base, "http://localhost", owner, `{"consent":true}`, 201).Body.Bytes(), &v)
+	stream := base + "/" + v.ID + "/stream"
+	request("GET", stream, "http://localhost", nil, "", 401)
+	request("GET", stream, "https://evil.example", owner, "", 403)
+	request("GET", stream, "", owner, "", 403)
+	request("GET", stream, "http://localhost", other, "", 409)
+	// Failed upgrade must release its claimed lease, so a later retry can claim.
+	request("GET", stream, "http://localhost", owner, "", 426)
+	request("GET", stream, "http://localhost", owner, "", 426)
+	request("DELETE", "/api/v1/speaking/sessions/"+v.ID, "http://localhost", owner, "", 204)
+	t.Log("live HTTP: consent, authentication, exact WebSocket Origin, ownership and failed-upgrade lease cleanup passed")
+}
+
 func (speakingTestProvider) Speak(context.Context, d.VoiceJob) ([]byte, error) {
 	return speakingWav(), nil
+}
+
+func testLiveSpeakingStorage(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	ctx := context.Background()
+	repo := speakingpg.New(pool, strings.Repeat("ab", 32))
+	var uid, other string
+	if e := pool.QueryRow(ctx, "INSERT INTO users(display_name) VALUES('Live storage QA') RETURNING id").Scan(&uid); e != nil {
+		t.Fatal(e)
+	}
+	if e := pool.QueryRow(ctx, "INSERT INTO users(display_name) VALUES('Other live QA') RETURNING id").Scan(&other); e != nil {
+		t.Fatal(e)
+	}
+	topic, turns, _ := d.NewPlan()
+	v, e := repo.CreateLive(ctx, uid, "test-report", "test-live", d.Countries[0].Voices[0], topic, turns)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if v.Mode != "live" || v.LiveModel != "test-live" {
+		t.Fatal("live mode not persisted")
+	}
+	if _, e = repo.ClaimVoice(ctx); e == nil {
+		t.Fatal("live question incorrectly queued for TTS")
+	}
+	if _, e = repo.ClaimLive(ctx, other, v.ID); e == nil {
+		t.Fatal("foreign live session claimed")
+	}
+	claimed, e := repo.ClaimLive(ctx, uid, v.ID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = repo.ClaimLive(ctx, uid, v.ID); e == nil {
+		t.Fatal("concurrent live connection allowed")
+	}
+	if _, e = repo.Answer(ctx, uid, v.ID, 0, speakingWav(), false); e == nil {
+		t.Fatal("recorded endpoint mutated live interview")
+	}
+	if e = repo.SaveLive(ctx, claimed, 0, speakingWav(), "I enjoy learning languages.", true, "What do you enjoy about your city?"); e != nil {
+		t.Fatal(e)
+	}
+	if e = repo.SaveLive(ctx, claimed, 0, speakingWav(), "overwrite", true, ""); e == nil {
+		t.Fatal("completed answer overwritten")
+	}
+	got, e := repo.Get(ctx, uid, v.ID)
+	if e != nil || !got.Turns[0].Answered || got.Turns[1].Prompt != "What do you enjoy about your city?" {
+		t.Fatal("progression not persisted", e)
+	}
+	audio, e := repo.Audio(ctx, uid, v.ID, 0, false)
+	if e != nil || !bytes.Equal(audio, speakingWav()) {
+		t.Fatal("live recording encryption roundtrip", e)
+	}
+	if e = repo.ReleaseLive(ctx, claimed); e != nil {
+		t.Fatal(e)
+	}
+	resumed, e := repo.ClaimLive(ctx, uid, v.ID)
+	if e != nil || resumed.LiveRunID == claimed.LiveRunID || resumed.Examiner != claimed.Examiner {
+		t.Fatal("resume identity", e)
+	}
+	if e = repo.SaveLive(ctx, claimed, 1, speakingWav(), "stale connection", true, ""); e == nil {
+		t.Fatal("stale connection wrote audio")
+	}
+	if e = repo.ReleaseLive(ctx, claimed); e != nil {
+		t.Fatal(e)
+	}
+	if e = repo.RenewLive(ctx, resumed); e != nil {
+		t.Fatal("stale release invalidated current lease", e)
+	}
+	if e = repo.Delete(ctx, uid, v.ID); e != nil {
+		t.Fatal(e)
+	}
+	if e = repo.SaveLive(ctx, resumed, 1, speakingWav(), "deleted session", true, ""); e == nil {
+		t.Fatal("deleted session resurrected")
+	}
+	t.Log("live storage: ownership, exclusive lease, stale writes, stable examiner, encrypted audio, atomic progression and deletion passed")
 }
 func (speakingTestProvider) Evaluate(_ context.Context, s d.Session) ([]byte, error) {
 	r := d.Report{Assessable: true, Summary: "Synthetic integration feedback, not a real evaluation.", NextSteps: []string{"Add examples."}, Issues: []d.Issue{}, Strengths: []string{"Clear ideas."}}

@@ -613,21 +613,26 @@ type SpeakingRequest struct {
 }
 
 type SpeakingSession struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Examiner       []byte             `json:"examiner"`
-	Topic          string             `json:"topic"`
-	Status         string             `json:"status"`
-	Report         []byte             `json:"report"`
-	Model          string             `json:"model"`
-	RubricVersion  string             `json:"rubric_version"`
-	RunID          pgtype.UUID        `json:"run_id"`
-	LeaseUntil     pgtype.Timestamptz `json:"lease_until"`
-	ErrorCode      string             `json:"error_code"`
-	ConsentAt      pgtype.Timestamptz `json:"consent_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	AudioExpiresAt pgtype.Timestamptz `json:"audio_expires_at"`
+	ID              pgtype.UUID        `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	Examiner        []byte             `json:"examiner"`
+	Topic           string             `json:"topic"`
+	Status          string             `json:"status"`
+	Report          []byte             `json:"report"`
+	Model           string             `json:"model"`
+	RubricVersion   string             `json:"rubric_version"`
+	RunID           pgtype.UUID        `json:"run_id"`
+	LeaseUntil      pgtype.Timestamptz `json:"lease_until"`
+	ErrorCode       string             `json:"error_code"`
+	ConsentAt       pgtype.Timestamptz `json:"consent_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	AudioExpiresAt  pgtype.Timestamptz `json:"audio_expires_at"`
+	Mode            string             `json:"mode"`
+	LiveModel       string             `json:"live_model"`
+	LiveRunID       pgtype.UUID        `json:"live_run_id"`
+	LiveLeaseUntil  pgtype.Timestamptz `json:"live_lease_until"`
+	LiveConnections int32              `json:"live_connections"`
 }
 
 type SpeakingTurn struct {
@@ -646,6 +651,7 @@ type SpeakingTurn struct {
 	DurationMs      int32              `json:"duration_ms"`
 	Answered        bool               `json:"answered"`
 	Skipped         bool               `json:"skipped"`
+	LiveTranscript  string             `json:"live_transcript"`
 }
 
 type StudentProfile struct {

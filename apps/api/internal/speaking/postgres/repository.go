@@ -35,10 +35,10 @@ func str(v pgtype.UUID) string {
 func row(v db.SpeakingSession) d.Session {
 	var ex d.Examiner
 	_ = json.Unmarshal(v.Examiner, &ex)
-	return d.Session{ID: str(v.ID), UserID: str(v.UserID), RunID: str(v.RunID), Examiner: ex, Topic: v.Topic, Status: v.Status, Report: v.Report, Model: v.Model, RubricVersion: v.RubricVersion, ErrorCode: v.ErrorCode, CreatedAt: v.CreatedAt.Time, AudioExpiresAt: v.AudioExpiresAt.Time, Turns: []d.Turn{}}
+	return d.Session{Mode: v.Mode, LiveModel: v.LiveModel, LiveRunID: str(v.LiveRunID), ID: str(v.ID), UserID: str(v.UserID), RunID: str(v.RunID), Examiner: ex, Topic: v.Topic, Status: v.Status, Report: v.Report, Model: v.Model, RubricVersion: v.RubricVersion, ErrorCode: v.ErrorCode, CreatedAt: v.CreatedAt.Time, AudioExpiresAt: v.AudioExpiresAt.Time, Turns: []d.Turn{}}
 }
 func turn(v db.SpeakingTurnsRow) d.Turn {
-	return d.Turn{Position: v.Position, Part: v.Part, Prompt: v.Prompt, Seconds: v.Seconds, PrepSeconds: v.PrepSeconds, VoiceStatus: v.VoiceStatus, VoiceAttempts: v.VoiceAttempts, DurationMS: v.DurationMs, Answered: v.Answered, Skipped: v.Skipped, HasRecording: v.HasRecording}
+	return d.Turn{Transcript: v.LiveTranscript, Position: v.Position, Part: v.Part, Prompt: v.Prompt, Seconds: v.Seconds, PrepSeconds: v.PrepSeconds, VoiceStatus: v.VoiceStatus, VoiceAttempts: v.VoiceAttempts, DurationMS: v.DurationMs, Answered: v.Answered, Skipped: v.Skipped, HasRecording: v.HasRecording}
 }
 func errRow(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -73,6 +73,12 @@ func (r *Repository) List(ctx context.Context, u string) ([]d.Session, error) {
 	return out, e
 }
 func (r *Repository) Create(ctx context.Context, u, model string, ex d.Examiner, topic string, turns []d.Turn) (d.Session, error) {
+	return r.create(ctx, u, model, "", ex, topic, turns)
+}
+func (r *Repository) CreateLive(ctx context.Context, u, model, liveModel string, ex d.Examiner, topic string, turns []d.Turn) (d.Session, error) {
+	return r.create(ctx, u, model, liveModel, ex, topic, turns)
+}
+func (r *Repository) create(ctx context.Context, u, model, liveModel string, ex d.Examiner, topic string, turns []d.Turn) (d.Session, error) {
 	tx, e := r.Pool.Begin(ctx)
 	if e != nil {
 		return d.Session{}, e
@@ -112,6 +118,14 @@ func (r *Repository) Create(ctx context.Context, u, model string, ex d.Examiner,
 	if e = q.RecordSpeakingRequest(ctx, db.RecordSpeakingRequestParams{UserID: uid, Kind: "start"}); e != nil {
 		return d.Session{}, e
 	}
+	if liveModel != "" {
+		if e = q.SetSpeakingLive(ctx, db.SetSpeakingLiveParams{ID: v.ID, LiveModel: liveModel}); e != nil {
+			return d.Session{}, e
+		}
+		if e = q.PrepareSpeakingLive(ctx, v.ID); e != nil {
+			return d.Session{}, e
+		}
+	}
 	if e = tx.Commit(ctx); e != nil {
 		return d.Session{}, e
 	}
@@ -128,7 +142,7 @@ func (r *Repository) Answer(ctx context.Context, u, id string, pos int32, audio 
 	if e != nil {
 		return d.Session{}, errRow(e)
 	}
-	if s.Status != "active" || time.Now().After(s.AudioExpiresAt.Time) {
+	if s.Mode == "live" || s.Status != "active" || time.Now().After(s.AudioExpiresAt.Time) {
 		return d.Session{}, d.ErrConflict
 	}
 	turns, e := q.SpeakingTurns(ctx, s.ID)

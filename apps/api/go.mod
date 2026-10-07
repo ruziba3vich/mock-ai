@@ -3,6 +3,7 @@ module github.com/own/mock-ai/apps/api
 go 1.27
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0

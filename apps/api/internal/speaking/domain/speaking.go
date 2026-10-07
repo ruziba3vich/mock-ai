@@ -58,6 +58,7 @@ func RandomExaminer() (Examiner, error) {
 }
 
 type Turn struct {
+	Transcript    string `json:"-"`
 	Position      int32  `json:"position"`
 	Part          int32  `json:"part"`
 	Prompt        string `json:"prompt"`
@@ -72,6 +73,9 @@ type Turn struct {
 	Recording     []byte `json:"-"`
 }
 type Session struct {
+	Mode           string          `json:"mode"`
+	LiveModel      string          `json:"-"`
+	LiveRunID      string          `json:"-"`
 	ID             string          `json:"id"`
 	UserID         string          `json:"-"`
 	RunID          string          `json:"-"`

@@ -25,7 +25,7 @@ SELECT * FROM speaking_sessions WHERE user_id=$1 AND id=$2 FOR UPDATE;
 SELECT * FROM speaking_sessions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 30;
 
 -- name: SpeakingTurns :many
-SELECT position,part,prompt,seconds,prep_seconds,voice_status,voice_attempts,duration_ms,answered,skipped,
+SELECT position,part,prompt,seconds,prep_seconds,voice_status,voice_attempts,duration_ms,answered,skipped,live_transcript,
 (recording IS NOT NULL)::boolean AS has_recording FROM speaking_turns WHERE session_id=$1 ORDER BY position;
 
 -- name: SpeakingAudio :one
@@ -49,7 +49,7 @@ DELETE FROM speaking_sessions WHERE user_id=$1 AND id=$2;
 
 -- name: ClaimSpeakingVoice :one
 WITH candidate AS (SELECT t.session_id,t.position FROM speaking_turns t JOIN speaking_sessions s ON s.id=t.session_id
- WHERE t.voice_status='queued' AND s.status='active' ORDER BY s.created_at,t.position FOR UPDATE OF t SKIP LOCKED LIMIT 1)
+ WHERE t.voice_status='queued' AND s.status='active' AND s.mode='recorded' ORDER BY s.created_at,t.position FOR UPDATE OF t SKIP LOCKED LIMIT 1)
 UPDATE speaking_turns t SET voice_status='processing',voice_attempts=voice_attempts+1,voice_lease_until=now()+interval '3 minutes'
 FROM candidate c,speaking_sessions s WHERE t.session_id=c.session_id AND t.position=c.position AND s.id=t.session_id
 RETURNING t.session_id,t.position,t.prompt,t.voice_run_id,s.examiner;

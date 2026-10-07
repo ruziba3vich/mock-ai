@@ -18,6 +18,7 @@ type Config struct {
 	GeminiWritingModel       string
 	GeminiSpeakingModel      string
 	GeminiSpeakingVoiceModel string
+	GeminiSpeakingLiveModel  string
 	TelegramBotToken         string
 	TelegramMiniAppURL       string
 	GoogleClientID           string
@@ -37,6 +38,7 @@ func Load() (Config, error) {
 		GeminiWritingModel:       envOr("GEMINI_WRITING_MODEL", "gemini-3.7-flash"),
 		GeminiSpeakingModel:      envOr("GEMINI_SPEAKING_MODEL", "gemini-3.7-flash"),
 		GeminiSpeakingVoiceModel: envOr("GEMINI_SPEAKING_VOICE_MODEL", "gemini-3.8-flash-tts"),
+		GeminiSpeakingLiveModel:  envOr("GEMINI_SPEAKING_LIVE_MODEL", "gemini-3.8-live"),
 		WebOrigin:                envOr("WEB_ORIGIN", "http://localhost:5173"),
 		TelegramBotToken:         os.Getenv("TELEGRAM_BOT_TOKEN"),
 		GoogleClientID:           os.Getenv("GOOGLE_CLIENT_ID"),

@@ -103,8 +103,8 @@ live calls in routine CI. Model scoring still needs human calibration before it
 is used for consequential assessments.
 
 Speaking reuses the same encrypted key vault. Optional Actions variables
-`GEMINI_SPEAKING_MODEL` and `GEMINI_SPEAKING_VOICE_MODEL` select evaluation and TTS
-models; defaults are `gemini-3.7-flash` and `gemini-3.8-flash-tts`. Migration 11 is
+`GEMINI_SPEAKING_MODEL`, `GEMINI_SPEAKING_VOICE_MODEL`, and `GEMINI_SPEAKING_LIVE_MODEL` select evaluation, legacy TTS,
+and live conversation models; defaults are `gemini-3.7-flash`, `gemini-3.8-flash-tts`, and `gemini-3.8-live`. Migrations 11–12 are
 applied by the normal backend deployment. Never rotate the encryption master
 without re-encrypting both provider credentials and Speaking recordings.
 See [Speaking operations and tests](speaking.md).

@@ -28,6 +28,7 @@ import (
 	speakingapp "github.com/own/mock-ai/apps/api/internal/speaking/application"
 	speakinggemini "github.com/own/mock-ai/apps/api/internal/speaking/gemini"
 	speakinghttp "github.com/own/mock-ai/apps/api/internal/speaking/httpapi"
+	speakinglive "github.com/own/mock-ai/apps/api/internal/speaking/live"
 	speakingpg "github.com/own/mock-ai/apps/api/internal/speaking/postgres"
 	"github.com/own/mock-ai/apps/api/internal/telegrambot"
 	writingapp "github.com/own/mock-ai/apps/api/internal/writing/application"
@@ -81,6 +82,9 @@ func main() {
 	}
 	speakingService := &speakingapp.Service{Repo: speakingpg.New(pool, cfg.AIKeyEncryptionKey), Provider: speakingProvider, Model: cfg.GeminiSpeakingModel, Log: logger}
 	speakingHandler := speakinghttp.New(speakingService, identityHandler, cfg.WebOrigin)
+	if provider, ok := speakingProvider.(speakinglive.Provider); ok {
+		speakingHandler.Live = &speakinglive.Service{Repo: speakingService.Repo.(*speakingpg.Repository), Provider: provider, Model: cfg.GeminiSpeakingLiveModel}
+	}
 	bot, err := telegrambot.New(cfg.TelegramBotToken, cfg.TelegramMiniAppURL, identityService, logger)
 	if err != nil {
 		logger.Error("initialize Telegram bot", "error", err)

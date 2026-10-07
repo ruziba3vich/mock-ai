@@ -15,6 +15,7 @@ type Querier interface {
 	ArchiveContentVersions(ctx context.Context, examID pgtype.UUID) error
 	AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error
 	ClaimReminders(ctx context.Context) ([]ClaimRemindersRow, error)
+	ClaimSpeakingLive(ctx context.Context, arg ClaimSpeakingLiveParams) (SpeakingSession, error)
 	ClaimSpeakingReport(ctx context.Context) (SpeakingSession, error)
 	ClaimSpeakingVoice(ctx context.Context) (ClaimSpeakingVoiceRow, error)
 	ClaimWriting(ctx context.Context) (WritingSubmission, error)
@@ -99,6 +100,7 @@ type Querier interface {
 	LockSpeakingUser(ctx context.Context, userID string) error
 	LockWritingUser(ctx context.Context, userID string) error
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error)
+	PrepareSpeakingLive(ctx context.Context, sessionID pgtype.UUID) error
 	PublishContentVersion(ctx context.Context, arg PublishContentVersionParams) (pgtype.UUID, error)
 	PurgeSpeakingAudio(ctx context.Context) error
 	QueueSpeakingReport(ctx context.Context, id pgtype.UUID) (SpeakingSession, error)
@@ -109,16 +111,21 @@ type Querier interface {
 	RecordPracticeAnswer(ctx context.Context, arg RecordPracticeAnswerParams) error
 	RecordSpeakingRequest(ctx context.Context, arg RecordSpeakingRequestParams) error
 	RecordWritingRequest(ctx context.Context, arg RecordWritingRequestParams) error
+	ReleaseSpeakingLive(ctx context.Context, arg ReleaseSpeakingLiveParams) error
+	RenewSpeakingLive(ctx context.Context, arg RenewSpeakingLiveParams) (int64, error)
 	ReserveAdminLogin(ctx context.Context, email string) (ReserveAdminLoginRow, error)
 	ResetAdminLogin(ctx context.Context, id pgtype.UUID) error
 	RevokeSession(ctx context.Context, tokenHash []byte) error
 	SaveAttemptAnswer(ctx context.Context, arg SaveAttemptAnswerParams) (AttemptAnswer, error)
 	SaveCommunityProfile(ctx context.Context, arg SaveCommunityProfileParams) error
 	SaveReminder(ctx context.Context, arg SaveReminderParams) error
+	SaveSpeakingLive(ctx context.Context, arg SaveSpeakingLiveParams) (int64, error)
 	SaveWorkspace(ctx context.Context, arg SaveWorkspaceParams) ([]byte, error)
 	SaveWriting(ctx context.Context, arg SaveWritingParams) (WritingSubmission, error)
 	SetAttemptAnswerScore(ctx context.Context, arg SetAttemptAnswerScoreParams) error
 	SetDraftExam(ctx context.Context, arg SetDraftExamParams) error
+	SetSpeakingLive(ctx context.Context, arg SetSpeakingLiveParams) error
+	SetSpeakingLiveQuestion(ctx context.Context, arg SetSpeakingLiveQuestionParams) (int64, error)
 	SpeakingAudio(ctx context.Context, arg SpeakingAudioParams) (SpeakingAudioRow, error)
 	SpeakingRecordings(ctx context.Context, sessionID pgtype.UUID) ([]SpeakingRecordingsRow, error)
 	SpeakingTurns(ctx context.Context, sessionID pgtype.UUID) ([]SpeakingTurnsRow, error)

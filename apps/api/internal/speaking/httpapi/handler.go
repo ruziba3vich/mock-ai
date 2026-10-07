@@ -7,6 +7,7 @@ import (
 	identity "github.com/own/mock-ai/apps/api/internal/identity/httpapi"
 	app "github.com/own/mock-ai/apps/api/internal/speaking/application"
 	d "github.com/own/mock-ai/apps/api/internal/speaking/domain"
+	"github.com/own/mock-ai/apps/api/internal/speaking/live"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,10 +19,11 @@ type Handler struct {
 	s      *app.Service
 	auth   *identity.Handler
 	origin string
+	Live   *live.Service
 }
 
 func New(s *app.Service, auth *identity.Handler, origin string) *Handler {
-	return &Handler{s, auth, strings.TrimRight(origin, "/")}
+	return &Handler{s: s, auth: auth, origin: strings.TrimRight(origin, "/")}
 }
 func reply(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -51,6 +53,7 @@ func fail(w http.ResponseWriter, e error) {
 	reply(w, code, map[string]any{"error": map[string]string{"message": message}})
 }
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	h.registerLive(mux)
 	handle := func(path string, f http.HandlerFunc) {
 		mux.Handle(path, h.auth.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "private, no-store")

@@ -155,6 +155,9 @@ provide plagiarism detection, fact checking or an official examiner assessment.
 
 ## Speaking
 
-Recorded three-part interviews, regional examiner voices, private audio playback,
+Live streamed three-part interviews, private audio playback,
 and AI Speaking reports are available under `/api/v1/speaking`. See
 [Speaking HTTP contract, retention and verification](speaking.md).
+New sessions use `POST /api/v1/speaking/live/sessions` and the authenticated,
+same-origin WebSocket `/api/v1/speaking/live/sessions/{id}/stream`. Earlier recorded
+interviews retain their original endpoints for compatibility.
