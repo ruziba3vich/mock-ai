@@ -231,7 +231,23 @@ func validContentData(kind string, raw []byte) bool {
 		}
 		return true
 	case "writing_prompt":
-		return text("prompt", 20, 4000) && v["task"] == "task_2"
+		task, _ := v["task"].(string)
+		if !text("prompt", 20, 4000) || (task != "task_1" && task != "task_2") {
+			return false
+		}
+		if rawPages, exists := v["source_image_urls"]; exists {
+			pages, ok := rawPages.([]any)
+			if !ok || len(pages) > 4 {
+				return false
+			}
+			for _, rawPage := range pages {
+				page, ok := rawPage.(string)
+				if !ok || len(page) > 2000 || (!strings.HasPrefix(page, "/api/v1/private-media/") && !strings.HasPrefix(page, "https://")) {
+					return false
+				}
+			}
+		}
+		return true
 	case "speaking_plan":
 		a, ok := v["turns"].([]any)
 		if !ok || len(a) != 11 {

@@ -10,7 +10,7 @@ func TestManagedContentValidation(t *testing.T) {
 		"daily_challenge": json.RawMessage(`{"metric":"today_questions","target":5,"action":"practice"}`),
 		"achievement":     json.RawMessage(`{"metric":"mocks","target":1,"icon":"M"}`),
 		"vocabulary":      json.RawMessage(`{"meaning":"in short supply","distractors":["common","infinite"]}`),
-		"writing_prompt":  json.RawMessage(`{"task":"task_2","prompt":"Discuss both views and give your own opinion about public transport."}`),
+		"writing_prompt":  json.RawMessage(`{"task":"task_1","prompt":"Describe the chart and compare its main features for a university lecturer.","source_image_urls":["/api/v1/private-media/00000000-0000-0000-0000-000000000000"]}`),
 		"speaking_plan":   speakingPlanForTest(),
 	}
 	for kind, data := range valid {
@@ -23,6 +23,15 @@ func TestManagedContentValidation(t *testing.T) {
 	}
 	if validContentData("speaking_plan", json.RawMessage(`{"turns":[]}`)) {
 		t.Fatal("incomplete speaking plan was accepted")
+	}
+}
+
+func TestWritingPromptRejectsUnknownTaskAndMedia(t *testing.T) {
+	if validContentData("writing_prompt", json.RawMessage(`{"task":"task_3","prompt":"This prompt is long enough to pass the text length check."}`)) {
+		t.Fatal("unknown writing task accepted")
+	}
+	if validContentData("writing_prompt", json.RawMessage(`{"task":"task_1","prompt":"This prompt is long enough to pass the text length check.","source_image_urls":["javascript:alert(1)"]}`)) {
+		t.Fatal("unsafe writing source URL accepted")
 	}
 }
 

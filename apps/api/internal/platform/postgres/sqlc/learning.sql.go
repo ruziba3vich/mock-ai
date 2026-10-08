@@ -437,6 +437,14 @@ WHERE m.id=$1 AND (
         s.audio_url='/api/v1/private-media/'||m.id::text
         OR s.source_image_urls ? ('/api/v1/private-media/'||m.id::text)
       )
+  ) OR EXISTS (
+    SELECT 1
+    FROM managed_content c
+    WHERE c.kind='writing_prompt'
+      AND c.status='published'
+      AND (c.starts_at IS NULL OR c.starts_at<=now())
+      AND (c.ends_at IS NULL OR c.ends_at>now())
+      AND COALESCE(c.data->'source_image_urls','[]'::jsonb) ? ('/api/v1/private-media/'||m.id::text)
   )
 )
 `
