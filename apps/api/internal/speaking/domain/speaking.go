@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"strings"
@@ -155,6 +156,30 @@ func NewPlan() (string, []Turn, error) {
 	return title, turns, nil
 }
 
+// FocusPlan keeps the complete interview for part 0, or creates a focused
+// practice session for one IELTS Speaking part. Positions are reindexed because
+// answer progression is deliberately sequential inside a session.
+func FocusPlan(topic string, turns []Turn, part int32) (string, []Turn, error) {
+	if part == 0 {
+		return topic, turns, nil
+	}
+	if part < 1 || part > 3 {
+		return "", nil, ErrInvalid
+	}
+	focused := make([]Turn, 0, len(turns))
+	for _, turn := range turns {
+		if turn.Part != part {
+			continue
+		}
+		turn.Position = int32(len(focused))
+		focused = append(focused, turn)
+	}
+	if len(focused) == 0 {
+		return "", nil, ErrInvalid
+	}
+	return fmt.Sprintf("%s · Part %d", topic, part), focused, nil
+}
+
 // Validate canonical 16 kHz mono PCM16 WAV and derive duration from bytes, never
 // a client-supplied duration. Browser recordings are normalized before upload.
 func ValidateAudio(b []byte, seconds int32) (int32, error) {
@@ -258,17 +283,26 @@ func ParseReport(raw []byte, s Session) (Report, error) {
 		}
 	}
 	duration, answered := int32(0), 0
-	parts := map[int32]bool{}
+	parts, plannedParts := map[int32]bool{}, map[int32]bool{}
 	for _, t := range s.Turns {
+		plannedParts[t.Part] = true
 		if !t.Skipped && t.DurationMS > 0 {
 			duration += t.DurationMS
 			answered++
 			parts[t.Part] = true
 		}
 	}
-	if duration < 60000 || answered < 3 || len(parts) < 3 {
+	insufficient := duration < 60000 || answered < 3 || len(parts) < 3
+	if len(plannedParts) == 1 {
+		insufficient = duration < 10000 || answered < 1 || len(parts) < 1
+	}
+	if insufficient {
 		r.Assessable = false
-		r.Summary = "There is too little recorded speech across all three parts for a reliable band estimate. " + r.Summary
+		if len(plannedParts) == 1 {
+			r.Summary = "There is too little recorded speech in this focused part for a reliable estimate. " + r.Summary
+		} else {
+			r.Summary = "There is too little recorded speech across all three parts for a reliable band estimate. " + r.Summary
+		}
 	}
 	if r.Assessable {
 		overall := math.Round(sum/4*2) / 2

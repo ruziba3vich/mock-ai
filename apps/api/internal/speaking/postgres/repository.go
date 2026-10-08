@@ -230,7 +230,7 @@ func (r *Repository) Queue(ctx context.Context, u, id string) (d.Session, error)
 	if e != nil {
 		return d.Session{}, e
 	}
-	if len(turns) != 11 {
+	if len(turns) == 0 {
 		return d.Session{}, d.ErrConflict
 	}
 	for _, t := range turns {

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,27 @@ func TestIncompleteSpeechHasNoBand(t *testing.T) {
 		if v.Score != nil {
 			t.Fatal("invented score for incomplete interview")
 		}
+	}
+}
+func TestFocusedSpeakingPartIsReindexedAndCanBeAssessed(t *testing.T) {
+	topic, turns, _ := NewPlan()
+	topic, turns, e := FocusPlan(topic, turns, 2)
+	if e != nil || len(turns) != 1 || turns[0].Position != 0 || turns[0].Part != 2 || !strings.HasSuffix(topic, "Part 2") {
+		t.Fatal(topic, turns, e)
+	}
+	turns[0].Answered, turns[0].DurationMS = true, 60000
+	r := Report{Assessable: true, Summary: "A developed long turn.", NextSteps: []string{"Add a more precise example."}, Responses: []Response{{Position: 0, Transcript: "I would like to describe a useful skill.", Feedback: "Develop the ending."}}}
+	for _, key := range []string{"fluency_coherence", "lexical_resource", "grammar", "pronunciation"} {
+		score := 6.5
+		r.Criteria = append(r.Criteria, Criterion{Key: key, Score: &score, Reason: "Evidence.", Improve: "Practise."})
+	}
+	b, _ := json.Marshal(r)
+	got, e := ParseReport(b, Session{Turns: turns})
+	if e != nil || !got.Assessable || got.Overall == nil || *got.Overall != 6.5 {
+		t.Fatal(got, e)
+	}
+	if _, _, e = FocusPlan(topic, turns, 4); e == nil {
+		t.Fatal("accepted an invalid speaking part")
 	}
 }
 func TestCatalogAndPlan(t *testing.T) {

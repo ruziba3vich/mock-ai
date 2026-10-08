@@ -29,6 +29,7 @@ func (h *Handler) registerLive(mux *http.ServeMux) {
 		var input struct {
 			Consent bool   `json:"consent"`
 			PlanID  string `json:"plan_id"`
+			Part    int32  `json:"part"`
 		}
 		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1000)).Decode(&input) != nil {
 			fail(w, d.ErrInvalid)
@@ -49,6 +50,11 @@ func (h *Handler) registerLive(mux *http.ServeMux) {
 			return
 		}
 		topic, turns, e := h.s.Repo.Plan(r.Context(), input.PlanID)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		topic, turns, e = d.FocusPlan(topic, turns, input.Part)
 		if e != nil {
 			fail(w, e)
 			return
