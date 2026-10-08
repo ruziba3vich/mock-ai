@@ -181,13 +181,13 @@ Return one JSON object with title, description, skill, purpose, duration_seconds
 			for sectionNumber := 1; sectionNumber <= sectionCount; sectionNumber++ {
 				sectionPrompt := fmt.Sprintf(`Extract only section %d of this test: %q (%s). Location: %s. Preserve the wording of the reading passage, prompts, choices, blanks and accepted answers. Make one question object per numbered answer and include only the question numbers belonging to this section. For matching, repeat the shared option list on every affected question. Explanations must briefly cite the source or answer-key basis. Do not invent or merge content from another section. For Listening, leave passage and audio_url empty and do not copy the transcript.
 Return one section object with title, passage, audio_url, instructions and questions. Each question has type, prompt, options, answers and explanation.`, sectionNumber, item.Title, item.Skill, item.Locator)
-				sectionRaw, sectionErr := c.generate(ctx, key, model, fileURI, sectionPrompt, sectionSchema, 8192)
+				sectionRaw, sectionErr := c.generate(ctx, key, model, fileURI, sectionPrompt, sectionSchema, 16000)
 				if sectionErr != nil {
-					return nil, nil, sectionErr
+					return nil, nil, fmt.Errorf("%s section %d: %w", item.Title, sectionNumber, sectionErr)
 				}
 				var section app.ContentSection
 				if json.Unmarshal(sectionRaw, &section) != nil {
-					return nil, nil, errors.New("invalid extracted section")
+					return nil, nil, fmt.Errorf("%s section %d: invalid extracted section", item.Title, sectionNumber)
 				}
 				content.Sections = append(content.Sections, section)
 			}
