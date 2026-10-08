@@ -224,9 +224,9 @@ func ValidateContent(c Content, publish bool) error {
 		}
 		if c.Skill == "listening" {
 			u, e := url.Parse(section.AudioURL)
-			privatePath := c.AccessScope == "private" && u.Scheme == "" && u.Host == "" && privateMediaPath(u.Path)
-			if e != nil || (!privatePath && (u.Scheme != "https" || u.Host == "")) {
-				return invalid("Listening needs an HTTPS recording or owned private audio")
+			managedPath := e == nil && u.Scheme == "" && u.Host == "" && privateMediaPath(u.Path)
+			if e != nil || (!managedPath && (u.Scheme != "https" || u.Host == "")) {
+				return invalid("Listening needs an HTTPS recording or managed audio")
 			}
 		}
 		if len(section.SourceImageURLs) > 12 {
@@ -234,9 +234,9 @@ func ValidateContent(c Content, publish bool) error {
 		}
 		for _, rawURL := range section.SourceImageURLs {
 			u, e := url.Parse(rawURL)
-			privatePath := c.AccessScope == "private" && e == nil && u.Scheme == "" && u.Host == "" && privateMediaPath(u.Path)
-			if !privatePath && (e != nil || u.Scheme != "https" || u.Host == "") {
-				return invalid("source pages need HTTPS or owned private media")
+			managedPath := e == nil && u.Scheme == "" && u.Host == "" && privateMediaPath(u.Path)
+			if !managedPath && (e != nil || u.Scheme != "https" || u.Host == "") {
+				return invalid("source pages need HTTPS or managed media")
 			}
 		}
 		for _, q := range section.Questions {

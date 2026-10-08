@@ -58,7 +58,7 @@ func TestUpdateStudyProfileRejectsInvalidValues(t *testing.T) {
 	}
 }
 
-func TestPrivateListeningAcceptsOnlyOwnedMediaPath(t *testing.T) {
+func TestManagedMediaPathSupportsPrivateAndPublicContent(t *testing.T) {
 	content := Content{
 		Title: "Private listening", Skill: "listening", Purpose: "mock", Duration: 60,
 		AccessScope: "private", OwnerUserID: "a6b92277-5f5d-48bf-a5d2-ef004f75015d",
@@ -72,8 +72,8 @@ func TestPrivateListeningAcceptsOnlyOwnedMediaPath(t *testing.T) {
 		t.Fatalf("private owned media should validate: %v", err)
 	}
 	content.AccessScope, content.OwnerUserID = "public", ""
-	if err := ValidateContent(content, true); !errors.Is(err, ErrInvalidProfile) {
-		t.Fatalf("public content must not expose private media: %v", err)
+	if err := ValidateContent(content, true); err != nil {
+		t.Fatalf("published content may reference access-controlled managed media: %v", err)
 	}
 	content.AccessScope = "private"
 	if err := ValidateContent(content, false); !errors.Is(err, ErrInvalidProfile) {

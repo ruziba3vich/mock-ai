@@ -132,7 +132,23 @@ ON CONFLICT(owner_user_id,sha256) DO UPDATE SET filename=EXCLUDED.filename
 RETURNING id;
 
 -- name: GetPrivateMedia :one
-SELECT filename,mime_type,data,created_at FROM private_media WHERE id=$1 AND owner_user_id=$2;
+SELECT m.filename,m.mime_type,m.data,m.created_at
+FROM private_media m
+WHERE m.id=$1 AND (
+  m.owner_user_id=$2 OR EXISTS (
+    SELECT 1
+    FROM exam_sections s
+    JOIN exam_versions v ON v.id=s.exam_version_id
+    JOIN exams e ON e.id=v.exam_id
+    WHERE e.archived_at IS NULL
+      AND e.access_scope='public'
+      AND v.status='published'
+      AND (
+        s.audio_url='/api/v1/private-media/'||m.id::text
+        OR s.source_image_urls ? ('/api/v1/private-media/'||m.id::text)
+      )
+  )
+);
 
 -- name: SetContentImportTotal :exec
 UPDATE content_imports SET progress_total=$2,updated_at=now() WHERE id=$1 AND status='processing';

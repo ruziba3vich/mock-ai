@@ -95,6 +95,7 @@ type Querier interface {
 	GetWorkspace(ctx context.Context, arg GetWorkspaceParams) ([]byte, error)
 	GetWriting(ctx context.Context, arg GetWritingParams) (WritingSubmission, error)
 	ImportAIKey(ctx context.Context, arg ImportAIKeyParams) error
+	ListAdminStudents(ctx context.Context) ([]ListAdminStudentsRow, error)
 	ListAttemptAnswers(ctx context.Context, attemptID pgtype.UUID) ([]AttemptAnswer, error)
 	ListAttemptScoringRows(ctx context.Context, id pgtype.UUID) ([]ListAttemptScoringRowsRow, error)
 	ListContentDrafts(ctx context.Context) ([]ListContentDraftsRow, error)

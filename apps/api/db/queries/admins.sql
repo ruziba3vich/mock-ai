@@ -49,3 +49,20 @@ FROM days d LEFT JOIN signups s USING(activity_date) LEFT JOIN activity a USING(
 
 -- name: AdminContentBreakdown :many
 SELECT kind,status,count(*)::integer AS count FROM managed_content GROUP BY kind,status ORDER BY kind,status;
+
+-- name: ListAdminStudents :many
+SELECT u.id,
+       u.display_name,
+       coalesce(u.email, '')::text AS email,
+       coalesce(telegram.profile->>'username', '')::text AS telegram_username,
+       coalesce(telegram.provider_subject, '')::text AS telegram_id
+FROM users u
+LEFT JOIN LATERAL (
+  SELECT i.profile, i.provider_subject
+  FROM user_identities i
+  WHERE i.user_id = u.id AND i.provider = 'telegram'
+  LIMIT 1
+) telegram ON true
+WHERE u.deleted_at IS NULL
+ORDER BY lower(u.display_name), u.id
+LIMIT 500;

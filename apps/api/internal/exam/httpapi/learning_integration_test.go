@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/own/mock-ai/apps/api/internal/platform/keyvault"
 	speakingapp "github.com/own/mock-ai/apps/api/internal/speaking/application"
 	speakinghttp "github.com/own/mock-ai/apps/api/internal/speaking/httpapi"
@@ -112,7 +113,7 @@ func TestLearningIntegration(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, otherSession, e := auth.Register(context.Background(), "Other QA", "other@example.com", "long-test-password", "", "")
+	otherStudent, otherSession, e := auth.Register(context.Background(), "Other QA", "other@example.com", "long-test-password", "", "")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -230,6 +231,11 @@ func TestLearningIntegration(t *testing.T) {
 	}
 	request("GET", "/api/v1/me", nil, adminCookie, 401)
 	request("GET", "/api/v1/admin/me", nil, adminCookie, 200)
+	request("GET", "/api/v1/admin/students", nil, cookie, 401)
+	students := request("GET", "/api/v1/admin/students", nil, adminCookie, 200)
+	if !strings.Contains(string(students["students"]), "Learning QA") || !strings.Contains(string(students["students"]), "Other QA") {
+		t.Fatal("admin student selector is incomplete")
+	}
 	adminRead := httptest.NewRequest("GET", "/api/v1/admin/me", nil)
 	adminRead.AddCookie(adminCookie)
 	adminRead.Header.Set("Origin", "http://localhost")
@@ -242,12 +248,23 @@ func TestLearningIntegration(t *testing.T) {
 	if e = pool.QueryRow(context.Background(), "SELECT count(*) FROM users WHERE email='editor@example.com'").Scan(&studentCount); e != nil || studentCount != 0 {
 		t.Fatal("admin must not create a student", e)
 	}
-	content := app.Content{Title: "Integration reading", Skill: "reading", Purpose: "practice", Duration: 600, Sections: []app.ContentSection{{Title: "Passage", Passage: "The library opens at nine.", Questions: []app.ContentQuestion{{Type: "short_answer", Prompt: "When does it open?", Answers: []string{"nine"}, Explanation: "The opening time is stated in the passage."}}}}}
+	mediaID, e := queries.CreatePrivateMedia(context.Background(), db.CreatePrivateMediaParams{OwnerUserID: uid, AdminAuthorID: func() pgtype.UUID { var v pgtype.UUID; _ = v.Scan(adminID); return v }(), Filename: "source.png", MimeType: "image/png", Sha256: "integration-public-media", Data: []byte("integration media")})
+	if e != nil {
+		t.Fatal(e)
+	}
+	mediaURL := "/api/v1/private-media/" + mediaID.String()
+	if _, e = repo.GetPrivateMedia(context.Background(), otherStudent.ID, mediaID.String()); !errors.Is(e, app.ErrNotFound) {
+		t.Fatal("unpublished media leaked to another student", e)
+	}
+	content := app.Content{Title: "Integration reading", Skill: "reading", Purpose: "practice", Duration: 600, AccessScope: "public", Sections: []app.ContentSection{{Title: "Passage", Passage: "The library opens at nine.", SourceImageURLs: []string{mediaURL}, Questions: []app.ContentQuestion{{Type: "short_answer", Prompt: "When does it open?", Answers: []string{"nine"}, Explanation: "The opening time is stated in the passage."}}}}}
 	result := request("POST", "/api/v1/admin/content", content, adminCookie, 200)
 	var draftID string
 	json.Unmarshal(result["id"], &draftID)
 	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, other, 401)
 	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, adminCookie, 200)
+	if _, e = repo.GetPrivateMedia(context.Background(), otherStudent.ID, mediaID.String()); e != nil {
+		t.Fatal("public exam media is unavailable to another student", e)
+	}
 	content.Sections[0].Questions[0].Explanation = "An improved explanation."
 	request("PUT", "/api/v1/admin/content/"+draftID, content, adminCookie, 200)
 	request("POST", "/api/v1/admin/content/"+draftID+"/publish", nil, adminCookie, 200)

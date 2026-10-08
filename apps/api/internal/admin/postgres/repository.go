@@ -77,6 +77,17 @@ func (r *Repository) Dashboard(ctx context.Context) (app.Dashboard, error) {
 	}
 	return out, nil
 }
+func (r *Repository) ListStudents(ctx context.Context) ([]app.Student, error) {
+	rows, e := r.q.ListAdminStudents(ctx)
+	if e != nil {
+		return nil, e
+	}
+	out := make([]app.Student, 0, len(rows))
+	for _, v := range rows {
+		out = append(out, app.Student{ID: str(v.ID), DisplayName: v.DisplayName, Email: v.Email, TelegramUsername: v.TelegramUsername, TelegramID: v.TelegramID})
+	}
+	return out, nil
+}
 func content(v db.ManagedContent) app.ManagedContent {
 	out := app.ManagedContent{ID: str(v.ID), Kind: v.Kind, Slug: v.Slug, Title: v.Title, Summary: v.Summary, Status: v.Status, SortOrder: v.SortOrder, Data: json.RawMessage(v.Data), CreatedAt: v.CreatedAt.Time, UpdatedAt: v.UpdatedAt.Time}
 	if v.StartsAt.Valid {

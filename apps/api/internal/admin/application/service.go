@@ -26,6 +26,13 @@ type Admin struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 }
+type Student struct {
+	ID               string `json:"id"`
+	DisplayName      string `json:"display_name"`
+	Email            string `json:"email,omitempty"`
+	TelegramUsername string `json:"telegram_username,omitempty"`
+	TelegramID       string `json:"telegram_id,omitempty"`
+}
 type Credential struct {
 	Admin
 	Hash string
@@ -85,6 +92,7 @@ type Repository interface {
 	CreateContent(context.Context, string, ManagedContent) (ManagedContent, error)
 	UpdateContent(context.Context, string, ManagedContent) (ManagedContent, error)
 	DeleteContent(context.Context, string) error
+	ListStudents(context.Context) ([]Student, error)
 }
 type Service struct {
 	repository Repository
@@ -164,6 +172,9 @@ func (s *Service) ListContent(ctx context.Context, kind string) ([]ManagedConten
 		return nil, ErrInvalidContent
 	}
 	return s.repository.ListContent(ctx, kind)
+}
+func (s *Service) ListStudents(ctx context.Context) ([]Student, error) {
+	return s.repository.ListStudents(ctx)
 }
 func (s *Service) SaveContent(ctx context.Context, adminID string, item ManagedContent) (ManagedContent, error) {
 	item.Kind = strings.TrimSpace(item.Kind)

@@ -193,6 +193,58 @@ func (q *Queries) GetAdminSession(ctx context.Context, tokenHash string) (GetAdm
 	return i, err
 }
 
+const listAdminStudents = `-- name: ListAdminStudents :many
+SELECT u.id,
+       u.display_name,
+       coalesce(u.email, '')::text AS email,
+       coalesce(telegram.profile->>'username', '')::text AS telegram_username,
+       coalesce(telegram.provider_subject, '')::text AS telegram_id
+FROM users u
+LEFT JOIN LATERAL (
+  SELECT i.profile, i.provider_subject
+  FROM user_identities i
+  WHERE i.user_id = u.id AND i.provider = 'telegram'
+  LIMIT 1
+) telegram ON true
+WHERE u.deleted_at IS NULL
+ORDER BY lower(u.display_name), u.id
+LIMIT 500
+`
+
+type ListAdminStudentsRow struct {
+	ID               pgtype.UUID `json:"id"`
+	DisplayName      string      `json:"display_name"`
+	Email            string      `json:"email"`
+	TelegramUsername string      `json:"telegram_username"`
+	TelegramID       string      `json:"telegram_id"`
+}
+
+func (q *Queries) ListAdminStudents(ctx context.Context) ([]ListAdminStudentsRow, error) {
+	rows, err := q.db.Query(ctx, listAdminStudents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAdminStudentsRow{}
+	for rows.Next() {
+		var i ListAdminStudentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DisplayName,
+			&i.Email,
+			&i.TelegramUsername,
+			&i.TelegramID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reserveAdminLogin = `-- name: ReserveAdminLogin :one
 UPDATE admins SET
  login_attempts=CASE WHEN login_window<now()-interval '15 minutes' THEN 1 ELSE login_attempts+1 END,
