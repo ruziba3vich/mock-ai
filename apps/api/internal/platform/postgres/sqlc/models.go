@@ -660,6 +660,18 @@ type Session struct {
 	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
 }
 
+type SpeakingEvaluationJob struct {
+	SessionID   pgtype.UUID        `json:"session_id"`
+	Part        int32              `json:"part"`
+	Status      string             `json:"status"`
+	Attempts    int32              `json:"attempts"`
+	ClaimID     pgtype.UUID        `json:"claim_id"`
+	LeaseUntil  pgtype.Timestamptz `json:"lease_until"`
+	AvailableAt pgtype.Timestamptz `json:"available_at"`
+	Result      []byte             `json:"result"`
+	ErrorCode   string             `json:"error_code"`
+}
+
 type SpeakingRequest struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`

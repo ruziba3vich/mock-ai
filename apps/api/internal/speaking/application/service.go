@@ -66,6 +66,14 @@ func (s *Service) Run(ctx context.Context) {
 		go s.worker(ctx, true)
 		go s.worker(ctx, true)
 	}
+	if repo, ok := s.Repo.(EvaluationRepository); ok {
+		if provider, ok := s.Provider.(AggregateProvider); ok {
+			for i := 0; i < 3; i++ {
+				go s.evaluationWorker(ctx, repo, provider)
+			}
+			return
+		}
+	}
 	go s.worker(ctx, false)
 }
 func (s *Service) worker(ctx context.Context, voice bool) {

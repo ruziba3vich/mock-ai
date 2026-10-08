@@ -15,11 +15,16 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 type speakingTestProvider struct{}
+
+func (p speakingTestProvider) Aggregate(ctx context.Context, s d.Session, _ []d.SectionEvidence) ([]byte, error) {
+	return p.Evaluate(ctx, s)
+}
 
 func (speakingTestProvider) ConnectLive(context.Context) (*websocket.Conn, error) {
 	return nil, d.ErrUnavailable
@@ -281,6 +286,60 @@ func testSpeaking(t *testing.T, h http.Handler, s *app.Service, pool *pgxpool.Po
 	if e := pool.QueryRow(ctx, "SELECT count(*) FROM speaking_requests WHERE kind='evaluate'").Scan(&n); e != nil || n != 1 {
 		t.Fatal("non-idempotent submit", n, e)
 	}
+	// Three concurrent claims must select different section jobs. Aggregation
+	// must wait, and an expired worker cannot overwrite its replacement.
+	repo := s.Repo.(app.EvaluationRepository)
+	jobs := make([]d.EvaluationJob, 3)
+	errs := make([]error, 3)
+	var group sync.WaitGroup
+	for i := range jobs {
+		group.Add(1)
+		go func(i int) { defer group.Done(); jobs[i], errs[i] = repo.ClaimEvaluation(ctx) }(i)
+	}
+	group.Wait()
+	seen := map[int32]bool{}
+	for i, j := range jobs {
+		if errs[i] != nil || j.Part == 0 || seen[j.Part] {
+			t.Fatal("concurrent section claim", j, errs[i])
+		}
+		seen[j.Part] = true
+	}
+	if _, e := repo.ClaimEvaluation(ctx); e == nil {
+		t.Fatal("aggregation claimed before sections completed")
+	}
+	stale := jobs[0]
+	if _, e := pool.Exec(ctx, "UPDATE speaking_evaluation_jobs SET lease_until=now()-interval '1 second' WHERE session_id=$1 AND part=$2", v.ID, stale.Part); e != nil {
+		t.Fatal(e)
+	}
+	if e := repo.RecoverEvaluation(ctx); e != nil {
+		t.Fatal(e)
+	}
+	replacement, e := repo.ClaimEvaluation(ctx)
+	if e != nil || replacement.Part != stale.Part || replacement.ClaimID == stale.ClaimID {
+		t.Fatal("recovery", replacement, e)
+	}
+	if e := repo.FinishEvaluation(ctx, stale, nil, "provider_unavailable"); e == nil {
+		t.Fatal("stale evaluation accepted")
+	}
+	jobs[0] = replacement
+	for _, j := range jobs {
+		section, _, e := repo.LoadEvaluation(ctx, j)
+		if e != nil {
+			t.Fatal(e)
+		}
+		for i, turn := range section.Turns {
+			if turn.Part != j.Part || turn.Position != int32(i) || (!turn.Skipped && len(turn.Recording) == 0) {
+				t.Fatal("section mapping/audio", j.Part, i)
+			}
+		}
+		// Release jobs for the actual worker pool below, preserving attempt counts.
+		if e = repo.FinishEvaluation(ctx, j, nil, "test_retry"); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if _, e := pool.Exec(ctx, "UPDATE speaking_evaluation_jobs SET available_at=now() WHERE session_id=$1", v.ID); e != nil {
+		t.Fatal(e)
+	}
 	work, cancel := context.WithCancel(ctx)
 	s.Run(work)
 	deadline := time.Now().Add(10 * time.Second)
@@ -297,9 +356,37 @@ func testSpeaking(t *testing.T, h http.Handler, s *app.Service, pool *pgxpool.Po
 		time.Sleep(50 * time.Millisecond)
 	}
 	cancel()
+	if e := pool.QueryRow(ctx, "SELECT count(*) FROM speaking_evaluation_jobs WHERE session_id=$1 AND status='completed'", v.ID).Scan(&n); e != nil || n != 4 {
+		t.Fatal("durable section and aggregate results", n, e)
+	}
 	var report d.Report
 	if e := json.Unmarshal(v.Report, &report); e != nil || report.Overall == nil || *report.Overall != 6.5 {
 		t.Fatal("report", report, e)
+	}
+	// A failed aggregation retry must reuse the three completed audio jobs.
+	if _, e := pool.Exec(ctx, "UPDATE speaking_sessions SET status='failed' WHERE id=$1", v.ID); e != nil {
+		t.Fatal(e)
+	}
+	request("POST", path+"/submit", nil, cookie, 202)
+	aggregate, e := repo.ClaimEvaluation(ctx)
+	if e != nil || aggregate.Part != 0 {
+		t.Fatal("retry repeated completed audio", aggregate, e)
+	}
+	_, evidence, e := repo.LoadEvaluation(ctx, aggregate)
+	if e != nil || len(evidence) != 3 {
+		t.Fatal("stored evidence", e)
+	}
+	for _, section := range evidence {
+		var partReport d.Report
+		_ = json.Unmarshal(section.Report, &partReport)
+		for _, response := range partReport.Responses {
+			if v.Turns[response.Position].Part != section.Part {
+				t.Fatal("lost original answer positions")
+			}
+		}
+	}
+	if e = repo.FinishEvaluation(ctx, aggregate, v.Report, ""); e != nil {
+		t.Fatal(e)
 	}
 	if _, e := pool.Exec(ctx, "UPDATE speaking_sessions SET audio_expires_at=now()-interval '1 second' WHERE id=$1", v.ID); e != nil {
 		t.Fatal(e)

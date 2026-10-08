@@ -74,22 +74,23 @@ type Turn struct {
 	Recording     []byte `json:"-"`
 }
 type Session struct {
-	Mode           string          `json:"mode"`
-	LiveModel      string          `json:"-"`
-	LiveRunID      string          `json:"-"`
-	ID             string          `json:"id"`
-	UserID         string          `json:"-"`
-	RunID          string          `json:"-"`
-	Examiner       Examiner        `json:"examiner"`
-	Topic          string          `json:"topic"`
-	Status         string          `json:"status"`
-	Model          string          `json:"-"`
-	RubricVersion  string          `json:"rubric_version"`
-	ErrorCode      string          `json:"error_code"`
-	Report         json.RawMessage `json:"report,omitempty"`
-	Turns          []Turn          `json:"turns"`
-	CreatedAt      time.Time       `json:"created_at"`
-	AudioExpiresAt time.Time       `json:"audio_expires_at"`
+	Evaluation     *EvaluationProgress `json:"evaluation,omitempty"`
+	Mode           string              `json:"mode"`
+	LiveModel      string              `json:"-"`
+	LiveRunID      string              `json:"-"`
+	ID             string              `json:"id"`
+	UserID         string              `json:"-"`
+	RunID          string              `json:"-"`
+	Examiner       Examiner            `json:"examiner"`
+	Topic          string              `json:"topic"`
+	Status         string              `json:"status"`
+	Model          string              `json:"-"`
+	RubricVersion  string              `json:"rubric_version"`
+	ErrorCode      string              `json:"error_code"`
+	Report         json.RawMessage     `json:"report,omitempty"`
+	Turns          []Turn              `json:"turns"`
+	CreatedAt      time.Time           `json:"created_at"`
+	AudioExpiresAt time.Time           `json:"audio_expires_at"`
 }
 type VoiceJob struct {
 	SessionID string

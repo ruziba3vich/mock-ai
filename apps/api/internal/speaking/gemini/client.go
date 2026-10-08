@@ -27,7 +27,7 @@ type Client struct {
 }
 
 func New(q *db.Queries, master, voiceModel string) *Client {
-	return &Client{q, master, voiceModel, &http.Client{Timeout: 95 * time.Second}, "https://generativelanguage.googleapis.com"}
+	return &Client{q, master, voiceModel, &http.Client{}, "https://generativelanguage.googleapis.com"}
 }
 func (c *Client) key(ctx context.Context) (string, error) {
 	b, e := c.Q.GetPrimaryAIKey(ctx)
@@ -52,11 +52,15 @@ func (c *Client) call(ctx context.Context, key, path string, body any, limit int
 func (c *Client) do(req *http.Request, limit int64) ([]byte, http.Header, error) {
 	res, e := c.HTTP.Do(req)
 	if e != nil {
-		return nil, nil, errors.New("audio provider request failed")
+		reason := "transport"
+		if errors.Is(req.Context().Err(), context.DeadlineExceeded) {
+			reason = "timeout"
+		}
+		return nil, nil, providerError(reason)
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, nil, fmt.Errorf("audio provider status %d", res.StatusCode)
+		return nil, nil, providerError(fmt.Sprintf("http_%d", res.StatusCode))
 	}
 	b, e := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if e != nil || int64(len(b)) > limit {
@@ -160,7 +164,7 @@ func (c *Client) evaluate(ctx context.Context, key string, s d.Session) ([]byte,
 	if len(wav) > 12_000_000 {
 		uri, name, e := c.upload(ctx, key, wav)
 		if e != nil {
-			return nil, e
+			return nil, providerError("upload_" + safeReason(e))
 		}
 		defer func() {
 			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -173,10 +177,14 @@ func (c *Client) evaluate(ctx context.Context, key string, s d.Session) ([]byte,
 	} else {
 		parts = append(parts, map[string]any{"inlineData": map[string]string{"mimeType": "audio/wav", "data": base64.StdEncoding.EncodeToString(wav)}})
 	}
-	body := map[string]any{"systemInstruction": map[string]any{"parts": []any{map[string]string{"text": instruction}}}, "contents": []any{map[string]any{"role": "user", "parts": parts}}, "generationConfig": map[string]any{"responseMimeType": "application/json", "responseJsonSchema": schema(), "maxOutputTokens": 20000, "thinkingConfig": map[string]string{"thinkingLevel": "low"}}}
-	raw, _, e := c.call(ctx, key, "/v1beta/models/"+url.PathEscape(s.Model)+":generateContent", body, 500000)
+	return c.generateReport(ctx, key, s.Model, instruction, parts, schema())
+}
+
+func (c *Client) generateReport(ctx context.Context, key, model, prompt string, parts []any, outputSchema map[string]any) ([]byte, error) {
+	body := map[string]any{"systemInstruction": map[string]any{"parts": []any{map[string]string{"text": prompt}}}, "contents": []any{map[string]any{"role": "user", "parts": parts}}, "generationConfig": map[string]any{"responseMimeType": "application/json", "responseJsonSchema": outputSchema, "maxOutputTokens": 20000, "thinkingConfig": map[string]string{"thinkingLevel": "low"}}}
+	raw, _, e := c.call(ctx, key, "/v1beta/models/"+url.PathEscape(model)+":generateContent", body, 500000)
 	if e != nil {
-		return nil, e
+		return nil, providerError("generate_" + safeReason(e))
 	}
 	var env struct {
 		Model      string `json:"modelVersion"`
@@ -191,7 +199,7 @@ func (c *Client) evaluate(ctx context.Context, key string, s d.Session) ([]byte,
 		} `json:"candidates"`
 	}
 	if json.Unmarshal(raw, &env) != nil || len(env.Candidates) != 1 || env.Candidates[0].Finish != "STOP" {
-		return nil, d.ErrUnavailable
+		return nil, providerError("generate_incomplete_response")
 	}
 	out := ""
 	for _, p := range env.Candidates[0].Content.Parts {
@@ -201,7 +209,7 @@ func (c *Client) evaluate(ctx context.Context, key string, s d.Session) ([]byte,
 	}
 	var report map[string]json.RawMessage
 	if json.Unmarshal([]byte(out), &report) != nil || report == nil {
-		return nil, d.ErrUnavailable
+		return nil, providerError("generate_invalid_json")
 	}
 	report["model_version"], _ = json.Marshal(env.Model)
 	return json.Marshal(report)

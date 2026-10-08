@@ -76,6 +76,21 @@ func (r *Repository) Get(ctx context.Context, u, id string) (d.Session, error) {
 	for _, t := range turns {
 		s.Turns = append(s.Turns, turn(t))
 	}
+	if e == nil && (s.Status == "queued" || s.Status == "processing") {
+		jobs, err := r.Q.ListSpeakingEvaluation(ctx, v.ID)
+		if err != nil {
+			return s, err
+		}
+		s.Evaluation = &d.EvaluationProgress{}
+		for _, j := range jobs {
+			if j.Part > 0 {
+				s.Evaluation.Total++
+				if j.Status == "completed" {
+					s.Evaluation.Completed++
+				}
+			}
+		}
+	}
 	return s, e
 }
 func (r *Repository) List(ctx context.Context, u string) ([]d.Session, error) {
@@ -255,6 +270,9 @@ func (r *Repository) Queue(ctx context.Context, u, id string) (d.Session, error)
 		return d.Session{}, d.ErrLimit
 	}
 	if _, e = q.QueueSpeakingReport(ctx, s.ID); e != nil {
+		return d.Session{}, e
+	}
+	if e = q.QueueSpeakingEvaluation(ctx, s.ID); e != nil {
 		return d.Session{}, e
 	}
 	if e = q.RecordSpeakingRequest(ctx, db.RecordSpeakingRequestParams{UserID: s.UserID, Kind: "evaluate"}); e != nil {

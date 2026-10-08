@@ -20,12 +20,14 @@ type Querier interface {
 	AssignUserRole(ctx context.Context, arg AssignUserRoleParams) error
 	ClaimContentImport(ctx context.Context) (ClaimContentImportRow, error)
 	ClaimReminders(ctx context.Context) ([]ClaimRemindersRow, error)
+	ClaimSpeakingEvaluation(ctx context.Context) (SpeakingEvaluationJob, error)
 	ClaimSpeakingLive(ctx context.Context, arg ClaimSpeakingLiveParams) (SpeakingSession, error)
 	ClaimSpeakingReport(ctx context.Context) (SpeakingSession, error)
 	ClaimSpeakingVoice(ctx context.Context) (ClaimSpeakingVoiceRow, error)
 	ClaimWriting(ctx context.Context) (WritingSubmission, error)
 	CompleteAttempt(ctx context.Context, arg CompleteAttemptParams) (Attempt, error)
 	CompleteContentImport(ctx context.Context, arg CompleteContentImportParams) error
+	CompleteSpeakingEvaluation(ctx context.Context, arg CompleteSpeakingEvaluationParams) (int64, error)
 	CountSpeakingRequests(ctx context.Context, arg CountSpeakingRequestsParams) (int32, error)
 	CountWritingToday(ctx context.Context, userID pgtype.UUID) (int32, error)
 	CreateAdmin(ctx context.Context, arg CreateAdminParams) (pgtype.UUID, error)
@@ -61,7 +63,9 @@ type Querier interface {
 	ExpireStaleAttemptsForExam(ctx context.Context, arg ExpireStaleAttemptsForExamParams) error
 	ExpireWritingJobs(ctx context.Context) error
 	FailContentImport(ctx context.Context, arg FailContentImportParams) error
+	FailExhaustedSpeakingEvaluation(ctx context.Context) error
 	FailStaleContentImports(ctx context.Context) error
+	FinishSpeakingEvaluation(ctx context.Context, arg FinishSpeakingEvaluationParams) (int64, error)
 	FinishSpeakingReport(ctx context.Context, arg FinishSpeakingReportParams) (int64, error)
 	FinishSpeakingVoice(ctx context.Context, arg FinishSpeakingVoiceParams) (int64, error)
 	FinishWriting(ctx context.Context, arg FinishWritingParams) (int64, error)
@@ -110,6 +114,7 @@ type Querier interface {
 	ListQuestionOptions(ctx context.Context, questionID pgtype.UUID) ([]QuestionOption, error)
 	ListSectionQuestions(ctx context.Context, sectionID pgtype.UUID) ([]ListSectionQuestionsRow, error)
 	ListSpeaking(ctx context.Context, userID pgtype.UUID) ([]SpeakingSession, error)
+	ListSpeakingEvaluation(ctx context.Context, sessionID pgtype.UUID) ([]SpeakingEvaluationJob, error)
 	ListStudentAttempts(ctx context.Context, arg ListStudentAttemptsParams) ([]ListStudentAttemptsRow, error)
 	ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]UserRole, error)
 	ListWriting(ctx context.Context, userID pgtype.UUID) ([]WritingSubmission, error)
@@ -118,10 +123,12 @@ type Querier interface {
 	LockSpeakingUser(ctx context.Context, userID string) error
 	LockWritingUser(ctx context.Context, userID string) error
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error)
+	MarkSpeakingEvaluationProcessing(ctx context.Context, id pgtype.UUID) error
 	PrepareSpeakingLive(ctx context.Context, sessionID pgtype.UUID) error
 	PublishContentVersion(ctx context.Context, arg PublishContentVersionParams) (pgtype.UUID, error)
 	PublishedSpeakingPlan(ctx context.Context, id pgtype.UUID) (PublishedSpeakingPlanRow, error)
 	PurgeSpeakingAudio(ctx context.Context) error
+	QueueSpeakingEvaluation(ctx context.Context, sessionID pgtype.UUID) error
 	QueueSpeakingReport(ctx context.Context, id pgtype.UUID) (SpeakingSession, error)
 	QueueSpeakingVoice(ctx context.Context, arg QueueSpeakingVoiceParams) (int64, error)
 	QueueWriting(ctx context.Context, arg QueueWritingParams) (WritingSubmission, error)
@@ -131,6 +138,7 @@ type Querier interface {
 	RecordPracticeAnswer(ctx context.Context, arg RecordPracticeAnswerParams) error
 	RecordSpeakingRequest(ctx context.Context, arg RecordSpeakingRequestParams) error
 	RecordWritingRequest(ctx context.Context, arg RecordWritingRequestParams) error
+	RecoverSpeakingEvaluation(ctx context.Context) error
 	ReleaseSpeakingLive(ctx context.Context, arg ReleaseSpeakingLiveParams) error
 	RenewSpeakingLive(ctx context.Context, arg RenewSpeakingLiveParams) (int64, error)
 	ReserveAdminLogin(ctx context.Context, email string) (ReserveAdminLoginRow, error)
@@ -148,6 +156,7 @@ type Querier interface {
 	SetSpeakingLive(ctx context.Context, arg SetSpeakingLiveParams) error
 	SetSpeakingLiveQuestion(ctx context.Context, arg SetSpeakingLiveQuestionParams) (int64, error)
 	SpeakingAudio(ctx context.Context, arg SpeakingAudioParams) (SpeakingAudioRow, error)
+	SpeakingEvaluationOwner(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	SpeakingRecordings(ctx context.Context, sessionID pgtype.UUID) ([]SpeakingRecordingsRow, error)
 	SpeakingTurns(ctx context.Context, sessionID pgtype.UUID) ([]SpeakingTurnsRow, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error
