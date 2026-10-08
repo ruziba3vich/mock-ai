@@ -27,7 +27,8 @@ func (h *Handler) registerLive(mux *http.ServeMux) {
 	}
 	mux.Handle("POST /api/v1/speaking/live/sessions", protect(func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
-			Consent bool `json:"consent"`
+			Consent bool   `json:"consent"`
+			PlanID  string `json:"plan_id"`
 		}
 		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1000)).Decode(&input) != nil {
 			fail(w, d.ErrInvalid)
@@ -47,7 +48,7 @@ func (h *Handler) registerLive(mux *http.ServeMux) {
 			fail(w, e)
 			return
 		}
-		topic, turns, e := h.s.Repo.Plan(r.Context())
+		topic, turns, e := h.s.Repo.Plan(r.Context(), input.PlanID)
 		if e != nil {
 			fail(w, e)
 			return

@@ -26,3 +26,8 @@ SELECT title,data FROM managed_content
 WHERE kind='speaking_plan' AND status='published'
  AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>now())
 ORDER BY random() LIMIT 1;
+
+-- name: PublishedSpeakingPlan :one
+SELECT title,data FROM managed_content
+WHERE id=$1 AND kind='speaking_plan' AND status='published'
+ AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>now());

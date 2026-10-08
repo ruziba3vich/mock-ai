@@ -10,7 +10,7 @@ import (
 
 type Repository interface {
 	Available(context.Context) (bool, error)
-	Plan(context.Context) (string, []d.Turn, error)
+	Plan(context.Context, string) (string, []d.Turn, error)
 	Create(context.Context, string, string, d.Examiner, string, []d.Turn) (d.Session, error)
 	Get(context.Context, string, string) (d.Session, error)
 	List(context.Context, string) ([]d.Session, error)
@@ -36,7 +36,7 @@ type Service struct {
 	Log      *slog.Logger
 }
 
-func (s *Service) Create(ctx context.Context, u string, consent bool) (d.Session, error) {
+func (s *Service) Create(ctx context.Context, u string, consent bool, planID string) (d.Session, error) {
 	if !consent {
 		return d.Session{}, d.ErrConsent
 	}
@@ -51,7 +51,7 @@ func (s *Service) Create(ctx context.Context, u string, consent bool) (d.Session
 	if e != nil {
 		return d.Session{}, e
 	}
-	topic, turns, e := s.Repo.Plan(ctx)
+	topic, turns, e := s.Repo.Plan(ctx, planID)
 	if e != nil {
 		return d.Session{}, e
 	}

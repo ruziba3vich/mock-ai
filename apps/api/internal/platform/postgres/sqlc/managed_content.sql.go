@@ -157,6 +157,24 @@ func (q *Queries) ListPublishedContent(ctx context.Context, kind string) ([]Mana
 	return items, nil
 }
 
+const publishedSpeakingPlan = `-- name: PublishedSpeakingPlan :one
+SELECT title,data FROM managed_content
+WHERE id=$1 AND kind='speaking_plan' AND status='published'
+ AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>now())
+`
+
+type PublishedSpeakingPlanRow struct {
+	Title string `json:"title"`
+	Data  []byte `json:"data"`
+}
+
+func (q *Queries) PublishedSpeakingPlan(ctx context.Context, id pgtype.UUID) (PublishedSpeakingPlanRow, error) {
+	row := q.db.QueryRow(ctx, publishedSpeakingPlan, id)
+	var i PublishedSpeakingPlanRow
+	err := row.Scan(&i.Title, &i.Data)
+	return i, err
+}
+
 const randomSpeakingPlan = `-- name: RandomSpeakingPlan :one
 SELECT title,data FROM managed_content
 WHERE kind='speaking_plan' AND status='published'

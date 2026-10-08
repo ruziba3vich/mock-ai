@@ -120,6 +120,7 @@ type Querier interface {
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error)
 	PrepareSpeakingLive(ctx context.Context, sessionID pgtype.UUID) error
 	PublishContentVersion(ctx context.Context, arg PublishContentVersionParams) (pgtype.UUID, error)
+	PublishedSpeakingPlan(ctx context.Context, id pgtype.UUID) (PublishedSpeakingPlanRow, error)
 	PurgeSpeakingAudio(ctx context.Context) error
 	QueueSpeakingReport(ctx context.Context, id pgtype.UUID) (SpeakingSession, error)
 	QueueSpeakingVoice(ctx context.Context, arg QueueSpeakingVoiceParams) (int64, error)

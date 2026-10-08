@@ -83,14 +83,15 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	})
 	handle("POST /api/v1/speaking/sessions", func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
-			Consent bool `json:"consent"`
+			Consent bool   `json:"consent"`
+			PlanID  string `json:"plan_id"`
 		}
 		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1000)).Decode(&input) != nil {
 			fail(w, d.ErrInvalid)
 			return
 		}
 		u, _ := identity.UserFromContext(r.Context())
-		v, e := h.s.Create(r.Context(), u.ID, input.Consent)
+		v, e := h.s.Create(r.Context(), u.ID, input.Consent, input.PlanID)
 		if e != nil {
 			fail(w, e)
 			return
