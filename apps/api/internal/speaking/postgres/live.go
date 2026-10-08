@@ -70,3 +70,32 @@ func (r *Repository) SaveLive(ctx context.Context, s d.Session, pos int32, wav [
 	}
 	return tx.Commit(ctx)
 }
+
+func (r *Repository) SkipLive(ctx context.Context, s d.Session, pos int32, next string) error {
+	if pos < 0 || int(pos) >= len(s.Turns) {
+		return d.ErrInvalid
+	}
+	tx, e := r.Pool.Begin(ctx)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(ctx)
+	q := r.Q.WithTx(tx)
+	n, e := q.SaveSpeakingLive(ctx, db.SaveSpeakingLiveParams{ID: uuid(s.ID), LiveRunID: uuid(s.LiveRunID), Position: pos, Answered: true, Skipped: true})
+	if e != nil {
+		return e
+	}
+	if n != 1 {
+		return d.ErrConflict
+	}
+	if next != "" {
+		n, e = q.SetSpeakingLiveQuestion(ctx, db.SetSpeakingLiveQuestionParams{ID: uuid(s.ID), LiveRunID: uuid(s.LiveRunID), Position: pos + 1, Prompt: next})
+		if e != nil {
+			return e
+		}
+		if n != 1 {
+			return d.ErrConflict
+		}
+	}
+	return tx.Commit(ctx)
+}

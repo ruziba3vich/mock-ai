@@ -22,11 +22,18 @@ type saved struct {
 type testRepo struct {
 	Repository
 	saves    chan saved
+	skips    chan saved
 	released chan bool
 }
 
 func (r *testRepo) SaveLive(_ context.Context, _ d.Session, p int32, b []byte, text string, done bool, next string) error {
 	r.saves <- saved{p, b, text, next}
+	return nil
+}
+func (r *testRepo) SkipLive(_ context.Context, _ d.Session, p int32, next string) error {
+	if r.skips != nil {
+		r.skips <- saved{pos: p, next: next}
+	}
 	return nil
 }
 func (r *testRepo) ReleaseLive(context.Context, d.Session) error { r.released <- true; return nil }
@@ -203,6 +210,15 @@ func TestMeaningful(t *testing.T) {
 	}
 }
 
+func TestPartTwoTimeLimitTransition(t *testing.T) {
+	message := timeLimitTransition(2, 7, "Why do adults find it difficult to learn new skills?")
+	for _, want := range []string{"two-minute Part 2 time limit", "time is up", "introduce Part 3", "Why do adults"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("missing %q in transition: %s", want, message)
+		}
+	}
+}
+
 func TestLiveResumesUpstreamAfterGoAway(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -277,5 +293,90 @@ func TestLiveResumesUpstreamAfterGoAway(t *testing.T) {
 	_, state, err = client.Read(ctx)
 	if err != nil || !strings.Contains(string(state), `"phase":"examiner"`) {
 		t.Fatalf("browser did not resume interview: %s (%v)", state, err)
+	}
+}
+
+func TestLiveEndsTimedAnswerAndAdvancesWhenTranscriptIsEmpty(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	upstream := make(chan *websocket.Conn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		upstream <- c
+		<-ctx.Done()
+		c.CloseNow()
+	}))
+	defer func() { cancel(); server.Close() }()
+	turns := []d.Turn{
+		{Position: 0, Part: 1, Prompt: "What do you enjoy studying?", Seconds: 1},
+		{Position: 1, Part: 3, Prompt: "Why is lifelong learning important?", Seconds: 1},
+	}
+	session := d.Session{ID: "skip-empty", UserID: "user", LiveModel: "test", Turns: turns, Topic: "learning"}
+	repo := &testRepo{saves: make(chan saved, 1), skips: make(chan saved, 1), released: make(chan bool, 1)}
+	service := Service{Repo: repo, Provider: testProvider{strings.Replace(server.URL, "http", "ws", 1)}}
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		_ = service.Run(ctx, c, session)
+	}))
+	defer func() { cancel(); app.Close() }()
+	client, _, err := websocket.Dial(ctx, strings.Replace(app.URL, "http", "ws", 1), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.CloseNow()
+	provider := <-upstream
+
+	// Setup, opening question, and playback completion move the browser to listening.
+	if _, _, err = provider.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = write(ctx, provider, map[string]any{"setupComplete": map[string]any{}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = client.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = provider.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	audio := base64.StdEncoding.EncodeToString(make([]byte, 4800))
+	if err = write(ctx, provider, map[string]any{"serverContent": map[string]any{"modelTurn": map[string]any{"parts": []any{map[string]any{"inlineData": map[string]string{"data": audio, "mimeType": "audio/pcm;rate=24000"}}}}, "turnComplete": true}}); err != nil {
+		t.Fatal(err)
+	}
+	if kind, _, readErr := client.Read(ctx); readErr != nil || kind != websocket.MessageBinary {
+		t.Fatal("opening audio missing", readErr)
+	}
+	if _, _, err = client.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = write(ctx, client, map[string]string{"type": "playback_done"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, state, readErr := client.Read(ctx); readErr != nil || !strings.Contains(string(state), `"phase":"listening"`) {
+		t.Fatalf("interview did not start listening: %s (%v)", state, readErr)
+	}
+	frame := make([]byte, 3200)
+	for i := 0; i < 11; i++ {
+		if err = client.Write(ctx, websocket.MessageBinary, frame); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, state, readErr := client.Read(ctx); readErr != nil || !strings.Contains(string(state), `"position":1`) || !strings.Contains(string(state), `"phase":"examiner"`) {
+		t.Fatalf("timed answer did not advance: %s (%v)", state, readErr)
+	}
+	select {
+	case skipped := <-repo.skips:
+		if skipped.pos != 0 || skipped.next != turns[1].Prompt {
+			t.Fatalf("wrong skipped turn: %+v", skipped)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed empty answer was not persisted as skipped")
 	}
 }

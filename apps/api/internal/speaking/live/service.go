@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"github.com/coder/websocket"
 	d "github.com/own/mock-ai/apps/api/internal/speaking/domain"
 	"log/slog"
@@ -16,6 +17,7 @@ type Repository interface {
 	RenewLive(context.Context, d.Session) error
 	ReleaseLive(context.Context, d.Session) error
 	SaveLive(context.Context, d.Session, int32, []byte, string, bool, string) error
+	SkipLive(context.Context, d.Session, int32, string) error
 	Queue(context.Context, string, string) (d.Session, error)
 	CreateLive(context.Context, string, string, string, d.Examiner, string, []d.Turn) (d.Session, error)
 }
@@ -60,7 +62,14 @@ func write(ctx context.Context, c *websocket.Conn, v any) error {
 
 // Run owns progression. Provider output cannot advance the persisted interview
 // without a validated tool call and actual recorded speech.
-func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.Session) error {
+func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.Session) (runErr error) {
+	started := time.Now()
+	position, currentPhase := 0, "starting"
+	defer func() {
+		if runErr != nil && s.Log != nil {
+			s.Log.Warn("live speaking stream ended", "session_id", session.ID, "position", position, "phase", currentPhase, "reason", terminationReason(runErr), "duration_ms", time.Since(started).Milliseconds())
+		}
+	}()
 	ctx, cancel := context.WithTimeout(parent, 20*time.Minute)
 	defer cancel()
 	defer func() {
@@ -97,6 +106,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	phase := "connecting"
+	currentPhase = phase
 	allowOutput := true
 	outputBytes, outputRetries := 0, 0
 	awaitPlayback := false
@@ -125,6 +135,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 		return session.Turns[pos].Prompt
 	}
 	state := func() error {
+		position, currentPhase = pos, phase
 		return write(ctx, client, map[string]any{"type": "state", "phase": phase, "position": pos, "part": session.Turns[pos].Part, "question": session.Turns[pos].Prompt, "prepare_until": prepUntil.UnixMilli()})
 	}
 	reconnectUpstream := func(reason string) error {
@@ -222,18 +233,29 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 					return d.ErrLimit
 				}
 				// A hard question budget bounds spend and ends the timed long turn.
-				// Never manufacture an answer or score when no speech was captured.
+				// The examiner moves on at the limit, just as in the real interview.
 				if len(pcm)+len(p.data) > int(session.Turns[pos].Seconds)*32000 {
-					if !Meaningful(transcript[helpStart:]) {
-						return d.ErrInvalid
+					if e = write(ctx, upstream, map[string]any{"realtimeInput": map[string]bool{"audioStreamEnd": true}}); e != nil {
+						return e
 					}
 					next := ""
 					if pos+1 < len(session.Turns) {
 						next = session.Turns[pos+1].Prompt
 					}
-					if e = s.Repo.SaveLive(ctx, session, int32(pos), Wave(pcm), transcript, true, next); e != nil {
+					// Preserve audible speech even if live transcription arrives late;
+					// only genuine silence/invalid audio is recorded as skipped.
+					_, audioErr := d.ValidateAudio(Wave(pcm), session.Turns[pos].Seconds)
+					skipped := audioErr != nil
+					if skipped {
+						if e = s.Repo.SkipLive(ctx, session, int32(pos), next); e != nil {
+							return e
+						}
+					} else if e = s.Repo.SaveLive(ctx, session, int32(pos), Wave(pcm), transcript, true, next); e != nil {
 						return e
 					}
+					session.Turns[pos].Answered = true
+					session.Turns[pos].Skipped = skipped
+					session.Turns[pos].Transcript = transcript
 					if next == "" {
 						if _, e = s.Repo.Queue(ctx, session.UserID, session.ID); e != nil {
 							return e
@@ -252,7 +274,8 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 					if e = state(); e != nil {
 						return e
 					}
-					if e = write(ctx, upstream, Control("The time for that answer has ended. Thank the student briefly and ask the next question at position "+jsonNumber(pos)+": "+next)); e != nil {
+					transition := timeLimitTransition(session.Turns[pos-1].Part, pos, next)
+					if e = write(ctx, upstream, Control(transition)); e != nil {
 						return e
 					}
 					continue
@@ -288,7 +311,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 				helpSpeech = ""
 				if session.Turns[pos].Part == 2 && !prepared {
 					phase = "preparing"
-					prepUntil = time.Now().Add(time.Minute)
+					prepUntil = time.Now().Add(time.Duration(session.Turns[pos].PrepSeconds) * time.Second)
 				} else {
 					phase = "listening"
 					audioStarted = time.Now()
@@ -514,3 +537,31 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 	}
 }
 func jsonNumber(n int) string { b, _ := json.Marshal(n); return string(b) }
+
+func timeLimitTransition(part int32, position int, next string) string {
+	if part == 2 {
+		return "The two-minute Part 2 time limit has ended. Tell the student briefly that time is up, introduce Part 3, then ask this question: " + next
+	}
+	return "The answer time limit has ended. Tell the student briefly that time is up, then ask the next question at position " + jsonNumber(position) + ": " + next
+}
+
+func terminationReason(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "session_deadline"
+	case errors.Is(err, context.Canceled):
+		return "request_canceled"
+	case errors.Is(err, d.ErrInvalid):
+		return "invalid_input"
+	case errors.Is(err, d.ErrLimit):
+		return "limit"
+	case errors.Is(err, d.ErrConflict):
+		return "lease_conflict"
+	case errors.Is(err, d.ErrUnavailable):
+		return "upstream_unavailable"
+	case websocket.CloseStatus(err) != -1:
+		return "websocket_closed"
+	default:
+		return "internal"
+	}
+}
