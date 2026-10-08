@@ -19,9 +19,17 @@ type ManagedContent struct {
 }
 
 func (s *Service) ListPublishedContent(ctx context.Context, kind string) ([]ManagedContent, error) {
-	valid := map[string]bool{"daily_challenge": true, "achievement": true, "vocabulary": true, "writing_prompt": true}
-	if !valid[kind] {
+	if !isPublishedContentKind(kind) {
 		return nil, ErrNotFound
 	}
 	return s.repository.ListPublishedContent(ctx, kind)
+}
+
+func isPublishedContentKind(kind string) bool {
+	switch kind {
+	case "daily_challenge", "achievement", "vocabulary", "writing_prompt", "speaking_plan":
+		return true
+	default:
+		return false
+	}
 }
