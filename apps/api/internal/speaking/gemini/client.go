@@ -123,7 +123,8 @@ func schema() map[string]any {
 	}
 	keys := map[string]any{"type": "string", "enum": []string{"fluency_coherence", "lexical_resource", "grammar", "pronunciation"}}
 	integer := map[string]any{"type": "integer", "minimum": 0, "maximum": 10}
-	return object(map[string]any{"assessable": map[string]any{"type": "boolean"}, "summary": text, "criteria": array(object(map[string]any{"key": keys, "score": map[string]any{"type": []string{"number", "null"}, "minimum": 0, "maximum": 9}, "reason": text, "how_to_improve": text}), 4), "responses": array(object(map[string]any{"position": integer, "transcript": text, "feedback": text}), 11), "issues": array(object(map[string]any{"category": keys, "position": integer, "second": map[string]any{"type": "number", "minimum": 0}, "quote": text, "explanation": text, "suggestion": text}), 12), "strengths": array(text, 5), "next_steps": array(text, 5)})
+	score := map[string]any{"type": []string{"number", "null"}, "minimum": 0, "maximum": 9}
+	return object(map[string]any{"assessable": map[string]any{"type": "boolean"}, "summary": text, "criteria": array(object(map[string]any{"key": keys, "score": score, "reason": text, "how_to_improve": text}), 4), "responses": array(object(map[string]any{"position": integer, "transcript": text, "feedback": text}), 11), "issues": array(object(map[string]any{"category": keys, "position": integer, "second": map[string]any{"type": "number", "minimum": 0}, "quote": text, "explanation": text, "suggestion": text}), 12), "strengths": array(text, 5), "next_steps": array(text, 5)})
 }
 func (c *Client) Evaluate(ctx context.Context, s d.Session) ([]byte, error) {
 	key, e := c.key(ctx)

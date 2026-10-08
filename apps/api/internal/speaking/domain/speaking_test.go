@@ -75,6 +75,38 @@ func TestReportComputedBandAndEvidence(t *testing.T) {
 		}
 	}
 }
+
+func TestReportRoundsCriterionScoresToHalfBands(t *testing.T) {
+	s, r := fixture()
+	scores := []float64{6.24, 6.26, 7.74, 7.76}
+	for i := range r.Criteria {
+		r.Criteria[i].Score = &scores[i]
+	}
+	b, _ := json.Marshal(r)
+	got, e := ParseReport(b, s)
+	if e != nil {
+		t.Fatal(e)
+	}
+	want := []float64{6, 6.5, 7.5, 8}
+	for i, criterion := range got.Criteria {
+		if criterion.Score == nil || *criterion.Score != want[i] {
+			t.Fatalf("criterion %d score = %v, want %.1f", i, criterion.Score, want[i])
+		}
+	}
+	if got.Overall == nil || *got.Overall != 7 {
+		t.Fatalf("overall = %v, want 7.0", got.Overall)
+	}
+}
+
+func TestReportValidationReasonIsSafeAndSpecific(t *testing.T) {
+	s, r := fixture()
+	r.Responses = r.Responses[:len(r.Responses)-1]
+	b, _ := json.Marshal(r)
+	_, e := ParseReport(b, s)
+	if e == nil || e.Error() != "invalid speaking feedback: response_count" {
+		t.Fatalf("error = %v", e)
+	}
+}
 func TestIncompleteSpeechHasNoBand(t *testing.T) {
 	s, r := fixture()
 	s.Turns[6].Skipped = true

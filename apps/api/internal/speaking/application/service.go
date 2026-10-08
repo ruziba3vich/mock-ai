@@ -119,6 +119,7 @@ func (s *Service) worker(ctx context.Context, voice bool) {
 					parsed, err := d.ParseReport(raw, v)
 					if err != nil {
 						code = "invalid_feedback"
+						s.Log.Warn("speaking report validation failed", "session_id", v.ID, "reason", err.Error())
 					} else {
 						report, _ = json.Marshal(parsed)
 					}

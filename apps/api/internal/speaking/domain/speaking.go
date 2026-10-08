@@ -234,52 +234,90 @@ type Report struct {
 
 func ParseReport(raw []byte, s Session) (Report, error) {
 	var r Report
-	invalid := errors.New("invalid speaking feedback")
-	if len(raw) > 90000 || json.Unmarshal(raw, &r) != nil || strings.TrimSpace(r.Summary) == "" || len(r.Criteria) != 4 || len(r.Responses) != len(s.Turns) || len(r.Issues) > 15 || len(r.NextSteps) < 1 || len(r.NextSteps) > 5 || len(r.Strengths) > 5 {
-		return r, invalid
+	if len(raw) > 90000 {
+		return r, invalidReport("payload_too_large")
+	}
+	if json.Unmarshal(raw, &r) != nil {
+		return r, invalidReport("malformed_json")
+	}
+	if strings.TrimSpace(r.Summary) == "" {
+		return r, invalidReport("missing_summary")
+	}
+	if len(r.Criteria) != 4 {
+		return r, invalidReport("criteria_count")
+	}
+	if len(r.Responses) != len(s.Turns) {
+		return r, invalidReport("response_count")
+	}
+	if len(r.Issues) > 15 {
+		return r, invalidReport("issues_count")
+	}
+	if len(r.NextSteps) < 1 || len(r.NextSteps) > 5 {
+		return r, invalidReport("next_steps_count")
+	}
+	if len(r.Strengths) > 5 {
+		return r, invalidReport("strengths_count")
 	}
 	allowed := map[string]bool{"fluency_coherence": true, "lexical_resource": true, "grammar": true, "pronunciation": true}
 	seen := map[string]bool{}
 	sum := 0.0
-	for _, c := range r.Criteria {
+	for i := range r.Criteria {
+		c := &r.Criteria[i]
 		if !allowed[c.Key] || seen[c.Key] || strings.TrimSpace(c.Reason) == "" || strings.TrimSpace(c.Improve) == "" {
-			return r, invalid
+			return r, invalidReport("criterion_fields")
 		}
 		seen[c.Key] = true
 		if c.Score != nil {
 			v := *c.Score
-			if math.IsNaN(v) || v < 0 || v > 9 || math.Trunc(v*2) != v*2 {
-				return r, invalid
+			if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 9 {
+				return r, invalidReport("criterion_score_range")
 			}
+			v = math.Round(v*2) / 2
+			c.Score = &v
 			sum += v
 		} else if r.Assessable {
-			return r, invalid
+			return r, invalidReport("criterion_score_required")
 		}
 	}
 	transcripts := map[int32]string{}
 	for _, v := range r.Responses {
 		if strings.TrimSpace(v.Feedback) == "" || len(v.Transcript) > 12000 || len(v.Feedback) > 3000 {
-			return r, invalid
+			return r, invalidReport("response_fields")
 		}
 		if v.Position < 0 || int(v.Position) >= len(s.Turns) {
-			return r, invalid
+			return r, invalidReport("response_position")
 		}
 		if _, ok := transcripts[v.Position]; ok {
-			return r, invalid
+			return r, invalidReport("response_duplicate")
 		}
 		if s.Turns[v.Position].Skipped && strings.TrimSpace(v.Transcript) != "" {
-			return r, invalid
+			return r, invalidReport("skipped_response_transcript")
 		}
 		transcripts[v.Position] = v.Transcript
 	}
 	for _, v := range r.Issues {
-		if !allowed[v.Category] || v.Position < 0 || int(v.Position) >= len(s.Turns) || s.Turns[v.Position].Skipped || v.Second < 0 || math.IsNaN(v.Second) || v.Second > float64(s.Turns[v.Position].DurationMS)/1000 || strings.TrimSpace(v.Quote) == "" || !strings.Contains(transcripts[v.Position], v.Quote) || strings.TrimSpace(v.Explanation) == "" || strings.TrimSpace(v.Suggestion) == "" {
-			return r, invalid
+		if !allowed[v.Category] {
+			return r, invalidReport("issue_category")
+		}
+		if v.Position < 0 || int(v.Position) >= len(s.Turns) {
+			return r, invalidReport("issue_position")
+		}
+		if s.Turns[v.Position].Skipped {
+			return r, invalidReport("issue_for_skipped_response")
+		}
+		if v.Second < 0 || math.IsNaN(v.Second) || math.IsInf(v.Second, 0) || v.Second > float64(s.Turns[v.Position].DurationMS)/1000 {
+			return r, invalidReport("issue_timestamp")
+		}
+		if strings.TrimSpace(v.Quote) == "" || !strings.Contains(transcripts[v.Position], v.Quote) {
+			return r, invalidReport("issue_quote")
+		}
+		if strings.TrimSpace(v.Explanation) == "" || strings.TrimSpace(v.Suggestion) == "" {
+			return r, invalidReport("issue_fields")
 		}
 	}
 	for _, v := range append(append([]string{}, r.Strengths...), r.NextSteps...) {
 		if strings.TrimSpace(v) == "" || len(v) > 2000 {
-			return r, invalid
+			return r, invalidReport("list_item")
 		}
 	}
 	duration, answered := int32(0), 0
@@ -314,4 +352,8 @@ func ParseReport(raw []byte, s Session) (Report, error) {
 		}
 	}
 	return r, nil
+}
+
+func invalidReport(reason string) error {
+	return fmt.Errorf("invalid speaking feedback: %s", reason)
 }
