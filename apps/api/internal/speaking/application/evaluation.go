@@ -79,6 +79,11 @@ func (s *Service) processEvaluation(ctx context.Context, repo EvaluationReposito
 		}
 		s.Log.Warn("speaking evaluation failed", "session_id", j.SessionID, "part", j.Part, "stage", stage, "reason", reason, "attempt", j.Attempts)
 	} else {
+		var omitted int
+		raw, omitted = d.VerifiedIssues(raw, v)
+		if omitted > 0 {
+			s.Log.Warn("speaking unverified annotations omitted", "session_id", j.SessionID, "part", j.Part, "count", omitted)
+		}
 		parsed, err := d.ParseReport(raw, v)
 		if err != nil {
 			code = "invalid_feedback"
