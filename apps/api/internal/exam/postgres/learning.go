@@ -209,7 +209,11 @@ func (r *Repository) PublishDraft(ctx context.Context, id string) (string, error
 		if c.Skill == "listening" {
 			passage, transcript = "", s.Passage
 		}
-		section, e := q.CreateContentSection(ctx, db.CreateContentSectionParams{ExamVersionID: version, Position: int32(i + 1), Title: s.Title, Instructions: s.Instructions, AudioUrl: text(s.AudioURL), Passage: text(passage), Transcript: text(transcript)})
+		sourcePages, e := json.Marshal(s.SourceImageURLs)
+		if e != nil {
+			return "", e
+		}
+		section, e := q.CreateContentSection(ctx, db.CreateContentSectionParams{ExamVersionID: version, Position: int32(i + 1), Title: s.Title, Instructions: s.Instructions, AudioUrl: text(s.AudioURL), Passage: text(passage), Transcript: text(transcript), SourceImageUrls: sourcePages})
 		if e != nil {
 			return "", e
 		}

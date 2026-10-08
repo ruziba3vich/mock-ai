@@ -35,11 +35,12 @@ type ContentQuestion struct {
 	Explanation string   `json:"explanation"`
 }
 type ContentSection struct {
-	Title        string            `json:"title"`
-	Passage      string            `json:"passage"`
-	AudioURL     string            `json:"audio_url"`
-	Instructions string            `json:"instructions"`
-	Questions    []ContentQuestion `json:"questions"`
+	Title           string            `json:"title"`
+	Passage         string            `json:"passage"`
+	AudioURL        string            `json:"audio_url"`
+	SourceImageURLs []string          `json:"source_image_urls"`
+	Instructions    string            `json:"instructions"`
+	Questions       []ContentQuestion `json:"questions"`
 }
 type ContentBand struct {
 	Minimum int     `json:"minimum"`
@@ -228,6 +229,16 @@ func ValidateContent(c Content, publish bool) error {
 				return invalid("Listening needs an HTTPS recording or owned private audio")
 			}
 		}
+		if len(section.SourceImageURLs) > 12 {
+			return invalid("a section supports at most 12 source pages")
+		}
+		for _, rawURL := range section.SourceImageURLs {
+			u, e := url.Parse(rawURL)
+			privatePath := c.AccessScope == "private" && e == nil && u.Scheme == "" && u.Host == "" && privateMediaPath(u.Path)
+			if !privatePath && (e != nil || u.Scheme != "https" || u.Host == "") {
+				return invalid("source pages need HTTPS or owned private media")
+			}
+		}
 		for _, q := range section.Questions {
 			if len(q.Answers) > 10 || len(q.Options) > 20 {
 				return invalid("a question supports at most 10 accepted answers and 20 options")
@@ -312,7 +323,7 @@ func privateMediaPath(path string) bool {
 
 func (s *Service) SavePrivateMedia(ctx context.Context, adminID, ownerID, filename, mime string, data []byte) (string, error) {
 	filename = filepath.Base(strings.TrimSpace(filename))
-	if filename == "" || filename == "." || mime != "audio/mpeg" || len(data) < 128 || len(data) > 25<<20 || len(ownerID) != 36 {
+	if filename == "" || filename == "." || (mime != "audio/mpeg" && mime != "image/png") || len(data) < 128 || len(data) > 25<<20 || len(ownerID) != 36 {
 		return "", ErrInvalidProfile
 	}
 	return s.repository.SavePrivateMedia(ctx, adminID, ownerID, filename, mime, data)

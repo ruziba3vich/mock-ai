@@ -551,14 +551,15 @@ type Exam struct {
 }
 
 type ExamSection struct {
-	ID            pgtype.UUID `json:"id"`
-	ExamVersionID pgtype.UUID `json:"exam_version_id"`
-	Position      int32       `json:"position"`
-	Title         string      `json:"title"`
-	Instructions  string      `json:"instructions"`
-	AudioUrl      pgtype.Text `json:"audio_url"`
-	Transcript    pgtype.Text `json:"transcript"`
-	Passage       pgtype.Text `json:"passage"`
+	ID              pgtype.UUID `json:"id"`
+	ExamVersionID   pgtype.UUID `json:"exam_version_id"`
+	Position        int32       `json:"position"`
+	Title           string      `json:"title"`
+	Instructions    string      `json:"instructions"`
+	AudioUrl        pgtype.Text `json:"audio_url"`
+	Transcript      pgtype.Text `json:"transcript"`
+	Passage         pgtype.Text `json:"passage"`
+	SourceImageUrls []byte      `json:"source_image_urls"`
 }
 
 type ExamVersion struct {

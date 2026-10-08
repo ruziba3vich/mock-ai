@@ -126,16 +126,23 @@ func (r *Repository) loadSections(ctx context.Context, versionID pgtype.UUID) ([
 			})
 		}
 		sections = append(sections, application.Section{
-			ID:           uuidString(row.ID),
-			Position:     row.Position,
-			Title:        row.Title,
-			Instructions: row.Instructions,
-			AudioURL:     textString(row.AudioUrl),
-			Passage:      textString(row.Passage),
-			Questions:    questions,
+			ID:              uuidString(row.ID),
+			Position:        row.Position,
+			Title:           row.Title,
+			Instructions:    row.Instructions,
+			AudioURL:        textString(row.AudioUrl),
+			Passage:         textString(row.Passage),
+			SourceImageURLs: stringList(row.SourceImageUrls),
+			Questions:       questions,
 		})
 	}
 	return sections, nil
+}
+
+func stringList(raw []byte) []string {
+	values := []string{}
+	_ = json.Unmarshal(raw, &values)
+	return values
 }
 
 func (r *Repository) StartAttempt(ctx context.Context, userID, versionID string) (application.Attempt, error) {

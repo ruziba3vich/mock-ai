@@ -123,20 +123,21 @@ func (q *Queries) GetPublishedExam(ctx context.Context, arg GetPublishedExamPara
 }
 
 const listExamSections = `-- name: ListExamSections :many
-SELECT id, exam_version_id, position, title, instructions, audio_url, passage
+SELECT id, exam_version_id, position, title, instructions, audio_url, passage, source_image_urls
 FROM exam_sections
 WHERE exam_version_id = $1
 ORDER BY position
 `
 
 type ListExamSectionsRow struct {
-	ID            pgtype.UUID `json:"id"`
-	ExamVersionID pgtype.UUID `json:"exam_version_id"`
-	Position      int32       `json:"position"`
-	Title         string      `json:"title"`
-	Instructions  string      `json:"instructions"`
-	AudioUrl      pgtype.Text `json:"audio_url"`
-	Passage       pgtype.Text `json:"passage"`
+	ID              pgtype.UUID `json:"id"`
+	ExamVersionID   pgtype.UUID `json:"exam_version_id"`
+	Position        int32       `json:"position"`
+	Title           string      `json:"title"`
+	Instructions    string      `json:"instructions"`
+	AudioUrl        pgtype.Text `json:"audio_url"`
+	Passage         pgtype.Text `json:"passage"`
+	SourceImageUrls []byte      `json:"source_image_urls"`
 }
 
 func (q *Queries) ListExamSections(ctx context.Context, examVersionID pgtype.UUID) ([]ListExamSectionsRow, error) {
@@ -156,6 +157,7 @@ func (q *Queries) ListExamSections(ctx context.Context, examVersionID pgtype.UUI
 			&i.Instructions,
 			&i.AudioUrl,
 			&i.Passage,
+			&i.SourceImageUrls,
 		); err != nil {
 			return nil, err
 		}

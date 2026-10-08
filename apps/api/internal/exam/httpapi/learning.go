@@ -192,7 +192,7 @@ func (h *Handler) registerLearning(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/private-media", admin(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, (26<<20)+(1<<20))
 		if e := r.ParseMultipartForm(1 << 20); e != nil {
-			writeError(w, 400, "invalid_upload", "Upload one MP3 up to 25 MB")
+			writeError(w, 400, "invalid_upload", "Upload one MP3 or PNG up to 25 MB")
 			return
 		}
 		if r.MultipartForm != nil {
@@ -200,17 +200,18 @@ func (h *Handler) registerLearning(mux *http.ServeMux) {
 		}
 		file, header, e := r.FormFile("file")
 		if e != nil {
-			writeError(w, 400, "invalid_upload", "Choose an MP3 recording")
+			writeError(w, 400, "invalid_upload", "Choose an MP3 recording or PNG source page")
 			return
 		}
 		defer file.Close()
 		data, e := io.ReadAll(io.LimitReader(file, (25<<20)+1))
-		if e != nil || len(data) > 25<<20 || !isMP3(data, header.Filename) {
-			writeError(w, 400, "invalid_upload", "Upload a valid MP3 up to 25 MB")
+		mime := mediaType(data, header.Filename)
+		if e != nil || len(data) > 25<<20 || mime == "" {
+			writeError(w, 400, "invalid_upload", "Upload a valid MP3 or PNG up to 25 MB")
 			return
 		}
 		u := adminhttp.AdminFromContext(r.Context())
-		id, e := h.service.SavePrivateMedia(r.Context(), u.ID, r.FormValue("owner_user_id"), header.Filename, "audio/mpeg", data)
+		id, e := h.service.SavePrivateMedia(r.Context(), u.ID, r.FormValue("owner_user_id"), header.Filename, mime, data)
 		if e != nil {
 			h.fail(w, e)
 			return
@@ -219,9 +220,13 @@ func (h *Handler) registerLearning(mux *http.ServeMux) {
 	}))
 }
 
-func isMP3(data []byte, filename string) bool {
-	if !strings.EqualFold(filepath.Ext(filename), ".mp3") || len(data) < 3 {
-		return false
+func mediaType(data []byte, filename string) string {
+	extension := strings.ToLower(filepath.Ext(filename))
+	if extension == ".mp3" && len(data) >= 3 && (string(data[:3]) == "ID3" || (data[0] == 0xff && data[1]&0xe0 == 0xe0)) {
+		return "audio/mpeg"
 	}
-	return string(data[:3]) == "ID3" || (data[0] == 0xff && data[1]&0xe0 == 0xe0)
+	if extension == ".png" && len(data) >= 8 && bytes.Equal(data[:8], []byte("\x89PNG\r\n\x1a\n")) {
+		return "image/png"
+	}
+	return ""
 }

@@ -42,7 +42,7 @@ WHERE e.id = $1
   AND (e.access_scope='public' OR e.owner_user_id=sqlc.arg(user_id));
 
 -- name: ListExamSections :many
-SELECT id, exam_version_id, position, title, instructions, audio_url, passage
+SELECT id, exam_version_id, position, title, instructions, audio_url, passage, source_image_urls
 FROM exam_sections
 WHERE exam_version_id = $1
 ORDER BY position;

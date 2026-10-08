@@ -25,13 +25,14 @@ type Exam struct {
 }
 
 type Section struct {
-	ID           string     `json:"id"`
-	Position     int32      `json:"position"`
-	Title        string     `json:"title"`
-	Instructions string     `json:"instructions"`
-	AudioURL     string     `json:"audio_url,omitempty"`
-	Passage      string     `json:"passage,omitempty"`
-	Questions    []Question `json:"questions"`
+	ID              string     `json:"id"`
+	Position        int32      `json:"position"`
+	Title           string     `json:"title"`
+	Instructions    string     `json:"instructions"`
+	AudioURL        string     `json:"audio_url,omitempty"`
+	Passage         string     `json:"passage,omitempty"`
+	SourceImageURLs []string   `json:"source_image_urls,omitempty"`
+	Questions       []Question `json:"questions"`
 }
 
 type Question struct {

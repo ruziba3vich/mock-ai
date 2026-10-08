@@ -281,17 +281,18 @@ func (q *Queries) CreateContentQuestion(ctx context.Context, arg CreateContentQu
 }
 
 const createContentSection = `-- name: CreateContentSection :one
-INSERT INTO exam_sections(exam_version_id,position,title,instructions,audio_url,passage,transcript) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id
+INSERT INTO exam_sections(exam_version_id,position,title,instructions,audio_url,passage,transcript,source_image_urls) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id
 `
 
 type CreateContentSectionParams struct {
-	ExamVersionID pgtype.UUID `json:"exam_version_id"`
-	Position      int32       `json:"position"`
-	Title         string      `json:"title"`
-	Instructions  string      `json:"instructions"`
-	AudioUrl      pgtype.Text `json:"audio_url"`
-	Passage       pgtype.Text `json:"passage"`
-	Transcript    pgtype.Text `json:"transcript"`
+	ExamVersionID   pgtype.UUID `json:"exam_version_id"`
+	Position        int32       `json:"position"`
+	Title           string      `json:"title"`
+	Instructions    string      `json:"instructions"`
+	AudioUrl        pgtype.Text `json:"audio_url"`
+	Passage         pgtype.Text `json:"passage"`
+	Transcript      pgtype.Text `json:"transcript"`
+	SourceImageUrls []byte      `json:"source_image_urls"`
 }
 
 func (q *Queries) CreateContentSection(ctx context.Context, arg CreateContentSectionParams) (pgtype.UUID, error) {
@@ -303,6 +304,7 @@ func (q *Queries) CreateContentSection(ctx context.Context, arg CreateContentSec
 		arg.AudioUrl,
 		arg.Passage,
 		arg.Transcript,
+		arg.SourceImageUrls,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

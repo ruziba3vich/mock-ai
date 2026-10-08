@@ -95,7 +95,7 @@ SELECT sqlc.arg(exam_id), COALESCE(max(version),0)+1, sqlc.arg(title),sqlc.arg(d
 FROM exam_versions WHERE exam_id = sqlc.arg(exam_id) RETURNING id;
 
 -- name: CreateContentSection :one
-INSERT INTO exam_sections(exam_version_id,position,title,instructions,audio_url,passage,transcript) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id;
+INSERT INTO exam_sections(exam_version_id,position,title,instructions,audio_url,passage,transcript,source_image_urls) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id;
 
 -- name: CreateContentQuestion :one
 INSERT INTO questions(section_id,position,type,prompt,explanation) VALUES ($1,$2,$3,$4,$5) RETURNING id;
