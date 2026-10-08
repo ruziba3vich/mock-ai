@@ -311,13 +311,25 @@ func (r *Repository) SavePrivateMedia(ctx context.Context, adminID, ownerID, fil
 	if e != nil {
 		return "", app.ErrNotFound
 	}
-	ownerUUID, e := parseUUID(ownerID)
+	ownerUUID, e := optionalUUID(ownerID)
 	if e != nil {
 		return "", app.ErrInvalidProfile
 	}
 	digest := fmt.Sprintf("%x", sha256.Sum256(data))
 	id, e := r.queries.CreatePrivateMedia(ctx, db.CreatePrivateMediaParams{OwnerUserID: ownerUUID, AdminAuthorID: adminUUID, Filename: filename, MimeType: mime, Sha256: digest, Data: data})
 	return uuidString(id), e
+}
+
+func (r *Repository) GetPrivateMediaForAdmin(ctx context.Context, mediaID string) (app.PrivateMedia, error) {
+	mid, e := parseUUID(mediaID)
+	if e != nil {
+		return app.PrivateMedia{}, app.ErrNotFound
+	}
+	row, e := r.queries.GetPrivateMediaForAdmin(ctx, mid)
+	if e != nil {
+		return app.PrivateMedia{}, learningError(e)
+	}
+	return app.PrivateMedia{Filename: row.Filename, MimeType: row.MimeType, Data: row.Data, CreatedAt: row.CreatedAt.Time}, nil
 }
 
 func (r *Repository) GetPrivateMedia(ctx context.Context, userID, mediaID string) (app.PrivateMedia, error) {

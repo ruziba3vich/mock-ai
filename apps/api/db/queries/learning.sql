@@ -128,8 +128,12 @@ RETURNING i.id,i.admin_author_id,i.filename,i.requested_skills,i.model,i.provide
 -- name: CreatePrivateMedia :one
 INSERT INTO private_media(owner_user_id,admin_author_id,filename,mime_type,sha256,data)
 VALUES($1,$2,$3,$4,$5,$6)
-ON CONFLICT(owner_user_id,sha256) DO UPDATE SET filename=EXCLUDED.filename
 RETURNING id;
+
+-- name: GetPrivateMediaForAdmin :one
+SELECT filename,mime_type,data,created_at
+FROM private_media
+WHERE id=$1;
 
 -- name: GetPrivateMedia :one
 SELECT m.filename,m.mime_type,m.data,m.created_at

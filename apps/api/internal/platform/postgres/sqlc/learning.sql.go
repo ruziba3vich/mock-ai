@@ -314,7 +314,6 @@ func (q *Queries) CreateContentSection(ctx context.Context, arg CreateContentSec
 const createPrivateMedia = `-- name: CreatePrivateMedia :one
 INSERT INTO private_media(owner_user_id,admin_author_id,filename,mime_type,sha256,data)
 VALUES($1,$2,$3,$4,$5,$6)
-ON CONFLICT(owner_user_id,sha256) DO UPDATE SET filename=EXCLUDED.filename
 RETURNING id
 `
 
@@ -457,6 +456,31 @@ type GetPrivateMediaRow struct {
 func (q *Queries) GetPrivateMedia(ctx context.Context, arg GetPrivateMediaParams) (GetPrivateMediaRow, error) {
 	row := q.db.QueryRow(ctx, getPrivateMedia, arg.ID, arg.OwnerUserID)
 	var i GetPrivateMediaRow
+	err := row.Scan(
+		&i.Filename,
+		&i.MimeType,
+		&i.Data,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPrivateMediaForAdmin = `-- name: GetPrivateMediaForAdmin :one
+SELECT filename,mime_type,data,created_at
+FROM private_media
+WHERE id=$1
+`
+
+type GetPrivateMediaForAdminRow struct {
+	Filename  string             `json:"filename"`
+	MimeType  string             `json:"mime_type"`
+	Data      []byte             `json:"data"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetPrivateMediaForAdmin(ctx context.Context, id pgtype.UUID) (GetPrivateMediaForAdminRow, error) {
+	row := q.db.QueryRow(ctx, getPrivateMediaForAdmin, id)
+	var i GetPrivateMediaForAdminRow
 	err := row.Scan(
 		&i.Filename,
 		&i.MimeType,

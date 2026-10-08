@@ -218,6 +218,17 @@ func (h *Handler) registerLearning(mux *http.ServeMux) {
 		}
 		writeJSON(w, http.StatusCreated, map[string]string{"id": id, "url": "/api/v1/private-media/" + id})
 	}))
+	mux.HandleFunc("GET /api/v1/admin/private-media/{media_id}", admin(func(w http.ResponseWriter, r *http.Request) {
+		media, e := h.service.GetPrivateMediaForAdmin(r.Context(), r.PathValue("media_id"))
+		if e != nil {
+			h.fail(w, e)
+			return
+		}
+		w.Header().Set("Content-Type", media.MimeType)
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, media.Filename, media.CreatedAt, bytes.NewReader(media.Data))
+	}))
 }
 
 func mediaType(data []byte, filename string) string {

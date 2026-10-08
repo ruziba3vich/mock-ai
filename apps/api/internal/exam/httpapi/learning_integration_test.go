@@ -248,6 +248,17 @@ func TestLearningIntegration(t *testing.T) {
 	if e = pool.QueryRow(context.Background(), "SELECT count(*) FROM users WHERE email='editor@example.com'").Scan(&studentCount); e != nil || studentCount != 0 {
 		t.Fatal("admin must not create a student", e)
 	}
+	sharedAudio := append([]byte("ID3"), bytes.Repeat([]byte{1}, 125)...)
+	sharedMediaID, e := service.SavePrivateMedia(context.Background(), adminID, "", "replacement.mp3", "audio/mpeg", sharedAudio)
+	if e != nil {
+		t.Fatal("save shared managed audio:", e)
+	}
+	if media, mediaErr := service.GetPrivateMediaForAdmin(context.Background(), sharedMediaID); mediaErr != nil || media.Filename != "replacement.mp3" {
+		t.Fatal("admin cannot review shared managed audio", mediaErr)
+	}
+	if _, e = repo.GetPrivateMedia(context.Background(), student.ID, sharedMediaID); !errors.Is(e, app.ErrNotFound) {
+		t.Fatal("unpublished shared audio leaked to a student", e)
+	}
 	mediaID, e := queries.CreatePrivateMedia(context.Background(), db.CreatePrivateMediaParams{OwnerUserID: uid, AdminAuthorID: func() pgtype.UUID { var v pgtype.UUID; _ = v.Scan(adminID); return v }(), Filename: "source.png", MimeType: "image/png", Sha256: strings.Repeat("a", 64), Data: []byte("integration media")})
 	if e != nil {
 		t.Fatal(e)

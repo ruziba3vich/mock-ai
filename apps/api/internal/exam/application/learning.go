@@ -91,6 +91,7 @@ type LearningRepository interface {
 	FailStaleImports(context.Context) error
 	SavePrivateMedia(context.Context, string, string, string, string, []byte) (string, error)
 	GetPrivateMedia(context.Context, string, string) (PrivateMedia, error)
+	GetPrivateMediaForAdmin(context.Context, string) (PrivateMedia, error)
 }
 
 func (s *Service) GetWorkspace(ctx context.Context, u, a string) (Workspace, error) {
@@ -323,7 +324,7 @@ func privateMediaPath(path string) bool {
 
 func (s *Service) SavePrivateMedia(ctx context.Context, adminID, ownerID, filename, mime string, data []byte) (string, error) {
 	filename = filepath.Base(strings.TrimSpace(filename))
-	if filename == "" || filename == "." || (mime != "audio/mpeg" && mime != "image/png") || len(data) < 128 || len(data) > 25<<20 || len(ownerID) != 36 {
+	if filename == "" || filename == "." || (mime != "audio/mpeg" && mime != "image/png") || len(data) < 128 || len(data) > 25<<20 || (ownerID != "" && len(ownerID) != 36) {
 		return "", ErrInvalidProfile
 	}
 	return s.repository.SavePrivateMedia(ctx, adminID, ownerID, filename, mime, data)
@@ -331,4 +332,8 @@ func (s *Service) SavePrivateMedia(ctx context.Context, adminID, ownerID, filena
 
 func (s *Service) GetPrivateMedia(ctx context.Context, userID, id string) (PrivateMedia, error) {
 	return s.repository.GetPrivateMedia(ctx, userID, id)
+}
+
+func (s *Service) GetPrivateMediaForAdmin(ctx context.Context, id string) (PrivateMedia, error) {
+	return s.repository.GetPrivateMediaForAdmin(ctx, id)
 }
