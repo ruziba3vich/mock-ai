@@ -209,7 +209,11 @@ func (r *Repository) PublishDraft(ctx context.Context, id string) (string, error
 		if c.Skill == "listening" {
 			passage, transcript = "", s.Passage
 		}
-		sourcePages, e := json.Marshal(s.SourceImageURLs)
+		pages := s.SourceImageURLs
+		if pages == nil {
+			pages = []string{}
+		}
+		sourcePages, e := json.Marshal(pages)
 		if e != nil {
 			return "", e
 		}
