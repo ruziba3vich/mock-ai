@@ -156,19 +156,41 @@ func (c *Client) Extract(ctx context.Context, fileURI, skills, model string) ([]
 		})),
 		"bands": list(object(map[string]any{"minimum": integer(), "band": number()})),
 	})
+	sectionSchema := object(map[string]any{
+		"title": text(), "passage": text(), "audio_url": text(), "instructions": text(),
+		"questions": list(object(map[string]any{
+			"type":   enum("multiple_choice", "multiple_select", "true_false_not_given", "yes_no_not_given", "short_answer", "sentence_completion", "summary_completion", "matching", "map_labeling"),
+			"prompt": text(), "options": list(text()), "answers": list(text()), "explanation": text(),
+		})),
+	})
 	for _, item := range catalog.Tests {
 		if item.Skill != "reading" && item.Skill != "listening" {
 			continue
 		}
 		request := fmt.Sprintf(`Extract exactly this test as an editable draft: %q (%s). Location: %s. Preserve the wording of reading passages, prompts, choices, blanks and accepted answers. Make one question object per numbered answer. For matching, repeat the shared option list on every affected question. Explanations must briefly cite the relevant source wording or answer-key basis; do not invent facts. Do not include page headers, footers or answer-key annotations in passages. Set purpose to mock and duration_seconds to 3600. For Listening, do not copy the transcript into passage: leave passage and audio_url empty because the licensed recording will be uploaded separately. Do not merge another test.
 Return one JSON object with title, description, skill, purpose, duration_seconds, instructions, sections and bands. Each section has title, passage, audio_url, instructions and questions. Each question has type, prompt, options, answers and explanation. Valid types: multiple_choice, multiple_select, true_false_not_given, yes_no_not_given, short_answer, sentence_completion, summary_completion, matching, map_labeling. Arrays must be present even when empty.`, item.Title, item.Skill, item.Locator)
-		one, e := c.generate(ctx, key, model, fileURI, request, contentSchema, 16384)
-		if e != nil {
-			return nil, nil, e
-		}
 		var content app.Content
-		if json.Unmarshal(one, &content) != nil {
-			return nil, nil, errors.New("invalid extracted test")
+		one, generateErr := c.generate(ctx, key, model, fileURI, request, contentSchema, 16384)
+		decodeErr := json.Unmarshal(one, &content)
+		if generateErr != nil || decodeErr != nil {
+			sectionCount := 3
+			if item.Skill == "listening" {
+				sectionCount = 4
+			}
+			content = app.Content{Title: item.Title, Description: "Complete IELTS " + item.Skill + " test.", Skill: item.Skill, Purpose: "mock", Duration: 3600, Instructions: "Complete every question and review your answers before submitting."}
+			for sectionNumber := 1; sectionNumber <= sectionCount; sectionNumber++ {
+				sectionPrompt := fmt.Sprintf(`Extract only section %d of this test: %q (%s). Location: %s. Preserve the wording of the reading passage, prompts, choices, blanks and accepted answers. Make one question object per numbered answer and include only the question numbers belonging to this section. For matching, repeat the shared option list on every affected question. Explanations must briefly cite the source or answer-key basis. Do not invent or merge content from another section. For Listening, leave passage and audio_url empty and do not copy the transcript.
+Return one section object with title, passage, audio_url, instructions and questions. Each question has type, prompt, options, answers and explanation.`, sectionNumber, item.Title, item.Skill, item.Locator)
+				sectionRaw, sectionErr := c.generate(ctx, key, model, fileURI, sectionPrompt, sectionSchema, 8192)
+				if sectionErr != nil {
+					return nil, nil, sectionErr
+				}
+				var section app.ContentSection
+				if json.Unmarshal(sectionRaw, &section) != nil {
+					return nil, nil, errors.New("invalid extracted section")
+				}
+				content.Sections = append(content.Sections, section)
+			}
 		}
 		content.Skill = item.Skill
 		contents = append(contents, content)
