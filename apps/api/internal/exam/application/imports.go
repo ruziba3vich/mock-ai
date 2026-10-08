@@ -70,6 +70,9 @@ func (s *Service) CreateImport(ctx context.Context, adminID, filename, skills, a
 	reader := io.MultiReader(bytes.NewReader(head[:]), file)
 	uri, digest, err := s.importer.UploadPDF(ctx, filename, reader, size)
 	if err != nil {
+		if s.log != nil {
+			s.log.Error("content import upload failed", "filename", filename, "error", err)
+		}
 		return "", ErrImportUnavailable
 	}
 	return s.repository.CreateImport(ctx, adminID, filename, size, digest, skills, s.importModel, uri, accessScope, ownerID)

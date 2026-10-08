@@ -61,11 +61,14 @@ func (c *Client) UploadPDF(ctx context.Context, filename string, source io.Reade
 	if e != nil {
 		return "", "", e
 	}
-	io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+	raw, readErr := io.ReadAll(io.LimitReader(response.Body, 4097))
 	response.Body.Close()
 	uploadURL := response.Header.Get("X-Goog-Upload-URL")
-	if response.StatusCode < 200 || response.StatusCode >= 300 || uploadURL == "" {
-		return "", "", errors.New("provider upload initialization failed")
+	if readErr != nil || len(raw) > 4096 || response.StatusCode < 200 || response.StatusCode >= 300 || uploadURL == "" {
+		if len(raw) > 1200 {
+			raw = raw[:1200]
+		}
+		return "", "", fmt.Errorf("provider upload initialization failed (%d): %s", response.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	hash := sha256.New()
 	counting := &countReader{Reader: io.TeeReader(io.LimitReader(source, size+1), hash)}
@@ -82,7 +85,7 @@ func (c *Client) UploadPDF(ctx context.Context, filename string, source io.Reade
 		return "", "", e
 	}
 	defer response.Body.Close()
-	raw, e := io.ReadAll(io.LimitReader(response.Body, 65537))
+	raw, e = io.ReadAll(io.LimitReader(response.Body, 65537))
 	if e != nil || len(raw) > 65536 || response.StatusCode < 200 || response.StatusCode >= 300 || counting.n != size {
 		return "", "", errors.New("provider file upload failed")
 	}
