@@ -17,7 +17,7 @@ var ErrConflict = errors.New("this interview changed; reload it to continue")
 var ErrUnavailable = errors.New("speaking is temporarily unavailable; try again shortly")
 var ErrLimit = errors.New("daily speaking limit reached: three interviews and five report requests per UTC day")
 var ErrInvalid = errors.New("record a clear answer before continuing, or choose Skip answer")
-var ErrConsent = errors.New("consent to send recorded answers to Google Gemini is required before starting")
+var ErrConsent = errors.New("consent to process recorded answers is required before starting")
 
 const Rubric = "speaking-v1"
 const MaxAudio = 4_200_000
@@ -83,7 +83,7 @@ type Session struct {
 	Examiner       Examiner        `json:"examiner"`
 	Topic          string          `json:"topic"`
 	Status         string          `json:"status"`
-	Model          string          `json:"model"`
+	Model          string          `json:"-"`
 	RubricVersion  string          `json:"rubric_version"`
 	ErrorCode      string          `json:"error_code"`
 	Report         json.RawMessage `json:"report,omitempty"`

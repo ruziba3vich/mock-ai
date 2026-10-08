@@ -29,7 +29,34 @@ func reply(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if v != nil {
-		_ = json.NewEncoder(w).Encode(v)
+		_ = json.NewEncoder(w).Encode(withoutModelMetadata(v))
+	}
+}
+func withoutModelMetadata(v any) any {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var public any
+	if json.Unmarshal(b, &public) != nil {
+		return v
+	}
+	removeModelMetadata(public)
+	return public
+}
+func removeModelMetadata(v any) {
+	switch value := v.(type) {
+	case map[string]any:
+		delete(value, "model")
+		delete(value, "model_version")
+		delete(value, "live_model")
+		for _, child := range value {
+			removeModelMetadata(child)
+		}
+	case []any:
+		for _, child := range value {
+			removeModelMetadata(child)
+		}
 	}
 }
 func fail(w http.ResponseWriter, e error) {

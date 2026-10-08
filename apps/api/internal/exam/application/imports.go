@@ -24,7 +24,7 @@ type ContentImport struct {
 	SHA256          string    `json:"sha256"`
 	RequestedSkills string    `json:"requested_skills"`
 	Status          string    `json:"status"`
-	Model           string    `json:"model"`
+	Model           string    `json:"-"`
 	ProgressCurrent int32     `json:"progress_current"`
 	ProgressTotal   int32     `json:"progress_total"`
 	DraftIDs        []string  `json:"draft_ids"`

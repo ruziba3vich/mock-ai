@@ -23,7 +23,34 @@ func reply(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	if v != nil {
-		_ = json.NewEncoder(w).Encode(v)
+		_ = json.NewEncoder(w).Encode(withoutModelMetadata(v))
+	}
+}
+func withoutModelMetadata(v any) any {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var public any
+	if json.Unmarshal(b, &public) != nil {
+		return v
+	}
+	removeModelMetadata(public)
+	return public
+}
+func removeModelMetadata(v any) {
+	switch value := v.(type) {
+	case map[string]any:
+		delete(value, "model")
+		delete(value, "model_version")
+		delete(value, "live_model")
+		for _, child := range value {
+			removeModelMetadata(child)
+		}
+	case []any:
+		for _, child := range value {
+			removeModelMetadata(child)
+		}
 	}
 }
 func fail(w http.ResponseWriter, e error) {
@@ -69,7 +96,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 			fail(w, e)
 			return
 		}
-		reply(w, 200, map[string]any{"enabled": ready && h.s.Evaluator != nil, "model": h.s.Model, "daily_limit": 5, "task": "task2"})
+		reply(w, 200, map[string]any{"enabled": ready && h.s.Evaluator != nil, "daily_limit": 5, "task": "task2"})
 	})
 	handle("GET /api/v1/writing/submissions", func(w http.ResponseWriter, r *http.Request) {
 		u, _ := identity.UserFromContext(r.Context())
@@ -132,7 +159,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 			return
 		}
 		if !i.Consent {
-			reply(w, 422, map[string]any{"error": map[string]string{"message": "Consent to send your essay and prompt to Google Gemini is required"}})
+			reply(w, 422, map[string]any{"error": map[string]string{"message": "Consent to process your essay and prompt for evaluation is required"}})
 			return
 		}
 		u, _ := identity.UserFromContext(r.Context())

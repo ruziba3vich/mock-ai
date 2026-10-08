@@ -23,7 +23,7 @@ type Submission struct {
 	Revision      int32           `json:"revision"`
 	Status        string          `json:"status"`
 	Report        json.RawMessage `json:"report,omitempty"`
-	Model         string          `json:"model"`
+	Model         string          `json:"-"`
 	RubricVersion string          `json:"rubric_version"`
 	ErrorCode     string          `json:"error_code"`
 	CreatedAt     time.Time       `json:"created_at"`
@@ -84,7 +84,7 @@ func (s *Service) Save(ctx context.Context, u, id string, i Input) (Submission, 
 }
 func (s *Service) Submit(ctx context.Context, u, id string, revision int32, consent bool) (Submission, error) {
 	if !consent {
-		return Submission{}, errors.New("consent to send this essay and prompt to Google Gemini is required")
+		return Submission{}, errors.New("consent to process this essay and prompt for evaluation is required")
 	}
 	v, e := s.Repo.Get(ctx, u, id)
 	if e != nil {
