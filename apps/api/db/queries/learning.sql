@@ -84,7 +84,7 @@ UPDATE content_drafts SET exam_id = $2 WHERE id = $1;
 INSERT INTO exams(slug,created_by_admin,access_scope,owner_user_id) VALUES ($1,$2,$3,$4) RETURNING id;
 
 -- name: UpdateContentExamAccess :exec
-UPDATE exams SET access_scope=$2, owner_user_id=$3, updated_at=now() WHERE id=$1;
+UPDATE exams SET access_scope=$2, owner_user_id=$3 WHERE id=$1;
 
 -- name: ArchiveContentVersions :exec
 UPDATE exam_versions SET status = 'archived' WHERE exam_id = $1 AND status = 'published';

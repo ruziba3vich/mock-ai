@@ -809,7 +809,7 @@ func (q *Queries) UpdateContentDraft(ctx context.Context, arg UpdateContentDraft
 }
 
 const updateContentExamAccess = `-- name: UpdateContentExamAccess :exec
-UPDATE exams SET access_scope=$2, owner_user_id=$3, updated_at=now() WHERE id=$1
+UPDATE exams SET access_scope=$2, owner_user_id=$3 WHERE id=$1
 `
 
 type UpdateContentExamAccessParams struct {
