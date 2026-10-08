@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/coder/websocket"
 	d "github.com/own/mock-ai/apps/api/internal/speaking/domain"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -25,18 +26,20 @@ type Service struct {
 	Repo     Repository
 	Provider Provider
 	Model    string
+	Log      *slog.Logger
 }
 type packet struct {
-	kind websocket.MessageType
-	data []byte
-	err  error
+	kind       websocket.MessageType
+	data       []byte
+	err        error
+	generation int
 }
 
-func read(ctx context.Context, c *websocket.Conn, ch chan<- packet) {
+func read(ctx context.Context, c *websocket.Conn, ch chan<- packet, generation int) {
 	for {
 		kind, b, e := c.Read(ctx)
 		select {
-		case ch <- packet{kind, b, e}:
+		case ch <- packet{kind: kind, data: b, err: e, generation: generation}:
 		case <-ctx.Done():
 			return
 		}
@@ -67,9 +70,12 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 	}()
 	upstream, e := s.Provider.ConnectLive(ctx)
 	if e != nil {
+		if s.Log != nil {
+			s.Log.Warn("live speaking upstream connection failed", "session_id", session.ID, "stage", "initial")
+		}
 		return e
 	}
-	defer upstream.CloseNow()
+	defer func() { upstream.CloseNow() }()
 	pos := 0
 	for pos < len(session.Turns) && session.Turns[pos].Answered {
 		pos++
@@ -78,13 +84,14 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 		_, e = s.Repo.Queue(ctx, session.UserID, session.ID)
 		return e
 	}
-	if e = write(ctx, upstream, Setup(session, pos)); e != nil {
+	if e = write(ctx, upstream, Setup(session, pos, "")); e != nil {
 		return e
 	}
 	client.SetReadLimit(8192)
 	incoming, provider := make(chan packet, 8), make(chan packet, 8)
-	go read(ctx, client, incoming)
-	go read(ctx, upstream, provider)
+	providerGeneration := 1
+	go read(ctx, client, incoming, 0)
+	go read(ctx, upstream, provider, providerGeneration)
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 	tick := time.NewTicker(time.Second)
@@ -98,6 +105,8 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 	var prepUntil time.Time
 	var pcm []byte
 	transcript := ""
+	resumeHandle := ""
+	recoveries := 0
 	helpStart := 0
 	helpSpeech := ""
 	audioStarted := time.Now()
@@ -117,6 +126,57 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 	}
 	state := func() error {
 		return write(ctx, client, map[string]any{"type": "state", "phase": phase, "position": pos, "part": session.Turns[pos].Part, "question": session.Turns[pos].Prompt, "prepare_until": prepUntil.UnixMilli()})
+	}
+	reconnectUpstream := func(reason string) error {
+		if recoveries >= 6 {
+			if s.Log != nil {
+				s.Log.Error("live speaking upstream recovery exhausted", "session_id", session.ID, "position", pos, "reason", reason, "recoveries", recoveries)
+			}
+			return d.ErrUnavailable
+		}
+		recoveries++
+		if s.Log != nil {
+			s.Log.Warn("live speaking upstream reconnect", "session_id", session.ID, "position", pos, "reason", reason, "attempt", recoveries, "resumable", resumeHandle != "")
+		}
+		providerGeneration++
+		upstream.CloseNow()
+		var next *websocket.Conn
+		var connectErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			if attempt > 0 {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(time.Duration(attempt) * 300 * time.Millisecond):
+				}
+			}
+			next, connectErr = s.Provider.ConnectLive(ctx)
+			if connectErr == nil {
+				break
+			}
+		}
+		if connectErr != nil {
+			if s.Log != nil {
+				s.Log.Error("live speaking upstream reconnect failed", "session_id", session.ID, "position", pos, "reason", reason, "attempts", 3)
+			}
+			return d.ErrUnavailable
+		}
+		upstream = next
+		go read(ctx, upstream, provider, providerGeneration)
+		pcm = nil
+		transcript = ""
+		helpStart = 0
+		helpSpeech = ""
+		prepared = false
+		prepUntil = time.Time{}
+		allowOutput = true
+		outputBytes, outputRetries = 0, 0
+		awaitPlayback = false
+		phase = "connecting"
+		if e := state(); e != nil {
+			return e
+		}
+		return write(ctx, upstream, Setup(session, pos, resumeHandle))
 	}
 	for {
 		select {
@@ -145,6 +205,9 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 			}
 		case p := <-incoming:
 			if p.err != nil {
+				if s.Log != nil {
+					s.Log.Info("live speaking client disconnected", "session_id", session.ID, "position", pos, "close_status", websocket.CloseStatus(p.err))
+				}
 				return p.err
 			}
 			if p.kind == websocket.MessageBinary {
@@ -258,12 +321,22 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 				return d.ErrInvalid
 			}
 		case p := <-provider:
+			if p.generation != providerGeneration {
+				continue
+			}
 			if p.err != nil {
-				return d.ErrUnavailable
+				if e = reconnectUpstream("read_closed"); e != nil {
+					return e
+				}
+				continue
 			}
 			var msg struct {
-				SetupComplete json.RawMessage `json:"setupComplete"`
-				GoAway        json.RawMessage `json:"goAway"`
+				SetupComplete           json.RawMessage `json:"setupComplete"`
+				GoAway                  json.RawMessage `json:"goAway"`
+				SessionResumptionUpdate struct {
+					NewHandle string `json:"newHandle"`
+					Resumable bool   `json:"resumable"`
+				} `json:"sessionResumptionUpdate"`
 				ServerContent struct {
 					ModelTurn struct {
 						Parts []struct {
@@ -293,8 +366,14 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 			if json.Unmarshal(p.data, &msg) != nil {
 				return d.ErrUnavailable
 			}
+			if msg.SessionResumptionUpdate.Resumable && msg.SessionResumptionUpdate.NewHandle != "" {
+				resumeHandle = msg.SessionResumptionUpdate.NewHandle
+			}
 			if len(msg.GoAway) > 0 {
-				return d.ErrUnavailable
+				if e = reconnectUpstream("go_away"); e != nil {
+					return e
+				}
+				continue
 			}
 			if len(msg.SetupComplete) > 0 {
 				phase = "examiner"
@@ -362,6 +441,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 								return e
 							}
 							session.Turns[pos].Answered = true
+							session.Turns[pos].Transcript = transcript
 							pcm = nil
 							transcript = ""
 							helpStart = 0

@@ -48,7 +48,7 @@ func testRealtimeVoice(t *testing.T, voice d.Examiner) {
 			t.Fatal("write failed")
 		}
 	}
-	send(live.Setup(s, 0))
+	send(live.Setup(s, 0, ""))
 	audio := 0
 	for {
 		_, b, e := conn.Read(ctx)

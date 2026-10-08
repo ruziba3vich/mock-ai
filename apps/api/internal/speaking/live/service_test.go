@@ -50,7 +50,7 @@ func TestLiveProgressionWaitAndOutputGate(t *testing.T) {
 		<-ctx.Done()
 		c.CloseNow()
 	}))
-	defer server.Close()
+	defer func() { cancel(); server.Close() }()
 	topic, turns, _ := d.NewPlan()
 	session := d.Session{ID: "session", UserID: "user", LiveModel: "test", Turns: turns, Topic: topic}
 	repo := &testRepo{saves: make(chan saved, 2), released: make(chan bool, 1)}
@@ -63,7 +63,7 @@ func TestLiveProgressionWaitAndOutputGate(t *testing.T) {
 		defer c.CloseNow()
 		_ = service.Run(ctx, c, session)
 	}))
-	defer app.Close()
+	defer func() { cancel(); app.Close() }()
 	client, _, e := websocket.Dial(ctx, strings.Replace(app.URL, "http", "ws", 1), nil)
 	if e != nil {
 		t.Fatal(e)
@@ -200,5 +200,82 @@ func TestMeaningful(t *testing.T) {
 	}
 	if !Meaningful("I enjoy studying languages.") {
 		t.Fatal("speech rejected")
+	}
+}
+
+func TestLiveResumesUpstreamAfterGoAway(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	connections := make(chan *websocket.Conn, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		connections <- c
+		<-ctx.Done()
+		c.CloseNow()
+	}))
+	defer func() { cancel(); server.Close() }()
+	topic, turns, _ := d.NewPlan()
+	session := d.Session{ID: "resumable", UserID: "user", LiveModel: "test", Turns: turns, Topic: topic}
+	repo := &testRepo{saves: make(chan saved, 1), released: make(chan bool, 1)}
+	service := Service{Repo: repo, Provider: testProvider{strings.Replace(server.URL, "http", "ws", 1)}}
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		_ = service.Run(ctx, c, session)
+	}))
+	defer func() { cancel(); app.Close() }()
+	client, _, err := websocket.Dial(ctx, strings.Replace(app.URL, "http", "ws", 1), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.CloseNow()
+
+	first := <-connections
+	_, initial, err := first.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var setup map[string]map[string]any
+	if json.Unmarshal(initial, &setup) != nil || setup["setup"]["sessionResumption"] == nil {
+		t.Fatal("initial setup did not request session resumption")
+	}
+	if err = write(ctx, first, map[string]any{"sessionResumptionUpdate": map[string]any{"newHandle": "resume-token", "resumable": true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = write(ctx, first, map[string]any{"goAway": map[string]any{"timeLeft": "5s"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	second := <-connections
+	_, resumed, err := second.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resumedSetup struct {
+		Setup struct {
+			SessionResumption struct {
+				Handle string `json:"handle"`
+			} `json:"sessionResumption"`
+		} `json:"setup"`
+	}
+	if json.Unmarshal(resumed, &resumedSetup) != nil || resumedSetup.Setup.SessionResumption.Handle != "resume-token" {
+		t.Fatalf("resumption handle missing from reconnect setup: %s", resumed)
+	}
+	if err = write(ctx, second, map[string]any{"setupComplete": map[string]any{}}); err != nil {
+		t.Fatal(err)
+	}
+	_, state, err := client.Read(ctx)
+	if err != nil || !strings.Contains(string(state), `"phase":"connecting"`) {
+		t.Fatalf("browser did not receive reconnect state: %s (%v)", state, err)
+	}
+	_, state, err = client.Read(ctx)
+	if err != nil || !strings.Contains(string(state), `"phase":"examiner"`) {
+		t.Fatalf("browser did not resume interview: %s (%v)", state, err)
 	}
 }

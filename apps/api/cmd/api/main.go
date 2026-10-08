@@ -87,7 +87,7 @@ func main() {
 	speakingService := &speakingapp.Service{Repo: speakingpg.New(pool, cfg.AIKeyEncryptionKey), Provider: speakingProvider, Model: cfg.GeminiSpeakingModel, Log: logger}
 	speakingHandler := speakinghttp.New(speakingService, identityHandler, cfg.WebOrigin)
 	if provider, ok := speakingProvider.(speakinglive.Provider); ok {
-		speakingHandler.Live = &speakinglive.Service{Repo: speakingService.Repo.(*speakingpg.Repository), Provider: provider, Model: cfg.GeminiSpeakingLiveModel}
+		speakingHandler.Live = &speakinglive.Service{Repo: speakingService.Repo.(*speakingpg.Repository), Provider: provider, Model: cfg.GeminiSpeakingLiveModel, Log: logger}
 	}
 	bot, err := telegrambot.New(cfg.TelegramBotToken, cfg.TelegramMiniAppURL, identityService, logger)
 	if err != nil {
