@@ -146,23 +146,22 @@ func (c *Client) Extract(ctx context.Context, fileURI, skills, model string) ([]
 	contentSchema := object(map[string]any{
 		"title": text(), "description": text(), "skill": enum("reading", "listening"),
 		"purpose": enum("mock"), "duration_seconds": integer(), "instructions": text(),
-		"sections": array(object(map[string]any{
+		"sections": list(object(map[string]any{
 			"title": text(), "passage": text(), "audio_url": text(),
-			"source_image_urls": array(text(), 20), "instructions": text(),
-			"questions": array(object(map[string]any{
+			"instructions": text(),
+			"questions": list(object(map[string]any{
 				"type":   enum("multiple_choice", "multiple_select", "true_false_not_given", "yes_no_not_given", "short_answer", "sentence_completion", "summary_completion", "matching", "map_labeling"),
-				"prompt": text(), "options": array(text(), 30), "answers": array(text(), 20), "explanation": text(),
-			}), 40),
-		}), 12),
-		"bands":        array(object(map[string]any{"minimum": integer(), "band": number()}), 20),
-		"access_scope": enum("public"), "owner_user_id": text(),
+				"prompt": text(), "options": list(text()), "answers": list(text()), "explanation": text(),
+			})),
+		})),
+		"bands": list(object(map[string]any{"minimum": integer(), "band": number()})),
 	})
 	for _, item := range catalog.Tests {
 		if item.Skill != "reading" && item.Skill != "listening" {
 			continue
 		}
 		request := fmt.Sprintf(`Extract exactly this test as an editable draft: %q (%s). Location: %s. Preserve the wording of reading passages, prompts, choices, blanks and accepted answers. Make one question object per numbered answer. For matching, repeat the shared option list on every affected question. Explanations must briefly cite the relevant source wording or answer-key basis; do not invent facts. Do not include page headers, footers or answer-key annotations in passages. Set purpose to mock and duration_seconds to 3600. For Listening, do not copy the transcript into passage: leave passage and audio_url empty because the licensed recording will be uploaded separately. Do not merge another test.
-Return one JSON object with title, description, skill, purpose, duration_seconds, instructions, sections, bands, access_scope set to public, and owner_user_id set to an empty string. Each section has title, passage, audio_url, source_image_urls, instructions, and questions. Each question has type, prompt, options, answers, and explanation. Valid types: multiple_choice, multiple_select, true_false_not_given, yes_no_not_given, short_answer, sentence_completion, summary_completion, matching, map_labeling. Arrays must be present even when empty.`, item.Title, item.Skill, item.Locator)
+Return one JSON object with title, description, skill, purpose, duration_seconds, instructions, sections and bands. Each section has title, passage, audio_url, instructions and questions. Each question has type, prompt, options, answers and explanation. Valid types: multiple_choice, multiple_select, true_false_not_given, yes_no_not_given, short_answer, sentence_completion, summary_completion, matching, map_labeling. Arrays must be present even when empty.`, item.Title, item.Skill, item.Locator)
 		one, e := c.generate(ctx, key, model, fileURI, request, contentSchema, 16384)
 		if e != nil {
 			return nil, nil, e
@@ -273,6 +272,7 @@ func number() map[string]any          { return map[string]any{"type": "number"} 
 func array(item any, max int) map[string]any {
 	return map[string]any{"type": "array", "items": item, "maxItems": max}
 }
+func list(item any) map[string]any { return map[string]any{"type": "array", "items": item} }
 func object(properties map[string]any) map[string]any {
 	required := make([]string, 0, len(properties))
 	for k := range properties {
