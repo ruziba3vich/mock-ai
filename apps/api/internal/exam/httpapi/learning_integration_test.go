@@ -248,7 +248,7 @@ func TestLearningIntegration(t *testing.T) {
 	if e = pool.QueryRow(context.Background(), "SELECT count(*) FROM users WHERE email='editor@example.com'").Scan(&studentCount); e != nil || studentCount != 0 {
 		t.Fatal("admin must not create a student", e)
 	}
-	mediaID, e := queries.CreatePrivateMedia(context.Background(), db.CreatePrivateMediaParams{OwnerUserID: uid, AdminAuthorID: func() pgtype.UUID { var v pgtype.UUID; _ = v.Scan(adminID); return v }(), Filename: "source.png", MimeType: "image/png", Sha256: "integration-public-media", Data: []byte("integration media")})
+	mediaID, e := queries.CreatePrivateMedia(context.Background(), db.CreatePrivateMediaParams{OwnerUserID: uid, AdminAuthorID: func() pgtype.UUID { var v pgtype.UUID; _ = v.Scan(adminID); return v }(), Filename: "source.png", MimeType: "image/png", Sha256: strings.Repeat("a", 64), Data: []byte("integration media")})
 	if e != nil {
 		t.Fatal(e)
 	}
