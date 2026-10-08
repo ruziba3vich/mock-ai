@@ -163,7 +163,7 @@ func (c *Client) Extract(ctx context.Context, fileURI, skills, model string) ([]
 		}
 		request := fmt.Sprintf(`Extract exactly this test as an editable draft: %q (%s). Location: %s. Preserve the wording of passages, prompts, choices, blanks and accepted answers. Make one question object per numbered answer. For matching, repeat the shared option list on every affected question. Explanations must briefly cite the relevant source wording or answer-key basis; do not invent facts. Do not include page headers, footers or answer-key annotations in passages. Set purpose to mock and duration_seconds to 3600. For Listening, put any transcript in passage and leave audio_url empty because audio must be uploaded separately. Do not merge another test.
 Return one JSON object with title, description, skill, purpose, duration_seconds, instructions, sections, bands, access_scope set to public, and owner_user_id set to an empty string. Each section has title, passage, audio_url, source_image_urls, instructions, and questions. Each question has type, prompt, options, answers, and explanation. Valid types: multiple_choice, multiple_select, true_false_not_given, yes_no_not_given, short_answer, sentence_completion, summary_completion, matching, map_labeling. Arrays must be present even when empty.`, item.Title, item.Skill, item.Locator)
-		one, e := c.generate(ctx, key, model, fileURI, request, contentSchema, 32768)
+		one, e := c.generate(ctx, key, model, fileURI, request, contentSchema, 16384)
 		if e != nil {
 			return nil, nil, e
 		}
