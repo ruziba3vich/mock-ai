@@ -66,13 +66,13 @@ SELECT c.user_id, i.provider_subject FROM claimed c JOIN user_identities i ON i.
 UPDATE study_reminders SET enabled = false WHERE user_id = $1;
 
 -- name: ListContentDrafts :many
-SELECT id, exam_id, data, updated_at FROM content_drafts ORDER BY updated_at DESC LIMIT 100;
+SELECT id, exam_id, data, access_scope, owner_user_id, updated_at FROM content_drafts ORDER BY updated_at DESC LIMIT 100;
 
 -- name: CreateContentDraft :one
-INSERT INTO content_drafts(admin_author_id, data) VALUES ($1,$2) RETURNING id;
+INSERT INTO content_drafts(admin_author_id,data,access_scope,owner_user_id) VALUES ($1,$2,$3,$4) RETURNING id;
 
 -- name: UpdateContentDraft :one
-UPDATE content_drafts SET data = $2, updated_at = now() WHERE id = $1 RETURNING id;
+UPDATE content_drafts SET data=$2,access_scope=$3,owner_user_id=$4,updated_at=now() WHERE id=$1 RETURNING id;
 
 -- name: LockContentDraft :one
 SELECT * FROM content_drafts WHERE id = $1 FOR UPDATE;
@@ -81,7 +81,10 @@ SELECT * FROM content_drafts WHERE id = $1 FOR UPDATE;
 UPDATE content_drafts SET exam_id = $2 WHERE id = $1;
 
 -- name: CreateContentExam :one
-INSERT INTO exams(slug,created_by_admin) VALUES ($1,$2) RETURNING id;
+INSERT INTO exams(slug,created_by_admin,access_scope,owner_user_id) VALUES ($1,$2,$3,$4) RETURNING id;
+
+-- name: UpdateContentExamAccess :exec
+UPDATE exams SET access_scope=$2, owner_user_id=$3, updated_at=now() WHERE id=$1;
 
 -- name: ArchiveContentVersions :exec
 UPDATE exam_versions SET status = 'archived' WHERE exam_id = $1 AND status = 'published';
@@ -107,11 +110,11 @@ INSERT INTO accepted_answers(question_id,value,position) VALUES ($1,$2,$3);
 INSERT INTO band_conversions(exam_version_id,minimum_raw_score,band) VALUES ($1,$2,$3);
 
 -- name: CreateContentImport :one
-INSERT INTO content_imports(admin_author_id,filename,size_bytes,sha256,requested_skills,model,provider_file_uri)
-VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id;
+INSERT INTO content_imports(admin_author_id,filename,size_bytes,sha256,requested_skills,model,provider_file_uri,access_scope,owner_user_id)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id;
 
 -- name: ListContentImports :many
-SELECT id,filename,size_bytes,sha256,requested_skills,status,model,progress_current,progress_total,draft_ids,warnings,error_message,created_at,updated_at,completed_at
+SELECT id,filename,size_bytes,sha256,requested_skills,status,model,progress_current,progress_total,draft_ids,warnings,error_message,access_scope,owner_user_id,created_at,updated_at,completed_at
 FROM content_imports WHERE admin_author_id=$1 ORDER BY created_at DESC LIMIT 30;
 
 -- name: ClaimContentImport :one
@@ -120,7 +123,16 @@ WITH candidate AS (
 )
 UPDATE content_imports i SET status='processing',updated_at=now()
 FROM candidate WHERE i.id=candidate.id
-RETURNING i.id,i.admin_author_id,i.filename,i.requested_skills,i.model,i.provider_file_uri;
+RETURNING i.id,i.admin_author_id,i.filename,i.requested_skills,i.model,i.provider_file_uri,i.access_scope,i.owner_user_id;
+
+-- name: CreatePrivateMedia :one
+INSERT INTO private_media(owner_user_id,admin_author_id,filename,mime_type,sha256,data)
+VALUES($1,$2,$3,$4,$5,$6)
+ON CONFLICT(owner_user_id,sha256) DO UPDATE SET filename=EXCLUDED.filename
+RETURNING id;
+
+-- name: GetPrivateMedia :one
+SELECT filename,mime_type,data,created_at FROM private_media WHERE id=$1 AND owner_user_id=$2;
 
 -- name: SetContentImportTotal :exec
 UPDATE content_imports SET progress_total=$2,updated_at=now() WHERE id=$1 AND status='processing';

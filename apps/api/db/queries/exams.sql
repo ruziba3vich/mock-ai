@@ -17,6 +17,7 @@ JOIN questions q ON q.section_id = es.id
 WHERE ev.status = 'published'
   AND ev.purpose = 'mock'
   AND e.archived_at IS NULL
+  AND (e.access_scope='public' OR e.owner_user_id=sqlc.arg(user_id))
 GROUP BY e.id, ev.id
 ORDER BY ev.published_at DESC;
 
@@ -37,7 +38,8 @@ JOIN exam_versions ev ON ev.exam_id = e.id
 WHERE e.id = $1
   AND ev.status = 'published'
   AND ev.purpose = 'mock'
-  AND e.archived_at IS NULL;
+  AND e.archived_at IS NULL
+  AND (e.access_scope='public' OR e.owner_user_id=sqlc.arg(user_id));
 
 -- name: ListExamSections :many
 SELECT id, exam_version_id, position, title, instructions, audio_url, passage
@@ -79,6 +81,7 @@ JOIN exams e ON e.id = ev.exam_id
 WHERE ev.status = 'published'
   AND ev.purpose = 'practice'
   AND e.archived_at IS NULL
+  AND (e.access_scope='public' OR e.owner_user_id=sqlc.arg(user_id))
   AND (sqlc.arg(skill)::text = '' OR ev.skill::text = sqlc.arg(skill)::text)
   AND (sqlc.arg(question_type)::text = '' OR q.type::text = sqlc.arg(question_type)::text)
 ORDER BY random()
@@ -95,4 +98,5 @@ WHERE q.id = $1
   AND ev.status = 'published'
   AND ev.purpose = 'practice'
   AND e.archived_at IS NULL
+  AND (e.access_scope='public' OR e.owner_user_id=sqlc.arg(user_id))
 ORDER BY aa.position;

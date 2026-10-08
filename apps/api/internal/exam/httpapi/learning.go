@@ -1,14 +1,30 @@
 package httpapi
 
 import (
+	"bytes"
 	adminhttp "github.com/own/mock-ai/apps/api/internal/admin/httpapi"
 	app "github.com/own/mock-ai/apps/api/internal/exam/application"
 	identity "github.com/own/mock-ai/apps/api/internal/identity/httpapi"
+	"io"
 	"net/http"
+	"path/filepath"
+	"strings"
 )
 
 func (h *Handler) registerLearning(mux *http.ServeMux) {
 	handle := func(path string, fn http.HandlerFunc) { mux.Handle(path, h.auth.RequireUser(fn)) }
+	handle("GET /api/v1/private-media/{media_id}", func(w http.ResponseWriter, r *http.Request) {
+		u, _ := identity.UserFromContext(r.Context())
+		media, e := h.service.GetPrivateMedia(r.Context(), u.ID, r.PathValue("media_id"))
+		if e != nil {
+			h.fail(w, e)
+			return
+		}
+		w.Header().Set("Content-Type", media.MimeType)
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, media.Filename, media.CreatedAt, bytes.NewReader(media.Data))
+	})
 	handle("GET /api/v1/me/community", func(w http.ResponseWriter, r *http.Request) {
 		u, _ := identity.UserFromContext(r.Context())
 		v, e := h.service.GetCommunity(r.Context(), u.ID)
@@ -166,11 +182,46 @@ func (h *Handler) registerLearning(mux *http.ServeMux) {
 		}
 		defer file.Close()
 		u := adminhttp.AdminFromContext(r.Context())
-		id, e := h.service.CreateImport(r.Context(), u.ID, header.Filename, r.FormValue("skills"), r.FormValue("rights_confirmed") == "true", header.Size, file)
+		id, e := h.service.CreateImport(r.Context(), u.ID, header.Filename, r.FormValue("skills"), r.FormValue("access_scope"), r.FormValue("owner_user_id"), r.FormValue("rights_confirmed") == "true", header.Size, file)
 		if e != nil {
 			h.fail(w, e)
 			return
 		}
 		writeJSON(w, http.StatusAccepted, map[string]string{"id": id})
 	}))
+	mux.HandleFunc("POST /api/v1/admin/private-media", admin(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, (26<<20)+(1<<20))
+		if e := r.ParseMultipartForm(1 << 20); e != nil {
+			writeError(w, 400, "invalid_upload", "Upload one MP3 up to 25 MB")
+			return
+		}
+		if r.MultipartForm != nil {
+			defer r.MultipartForm.RemoveAll()
+		}
+		file, header, e := r.FormFile("file")
+		if e != nil {
+			writeError(w, 400, "invalid_upload", "Choose an MP3 recording")
+			return
+		}
+		defer file.Close()
+		data, e := io.ReadAll(io.LimitReader(file, (25<<20)+1))
+		if e != nil || len(data) > 25<<20 || !isMP3(data, header.Filename) {
+			writeError(w, 400, "invalid_upload", "Upload a valid MP3 up to 25 MB")
+			return
+		}
+		u := adminhttp.AdminFromContext(r.Context())
+		id, e := h.service.SavePrivateMedia(r.Context(), u.ID, r.FormValue("owner_user_id"), header.Filename, "audio/mpeg", data)
+		if e != nil {
+			h.fail(w, e)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]string{"id": id, "url": "/api/v1/private-media/" + id})
+	}))
+}
+
+func isMP3(data []byte, filename string) bool {
+	if !strings.EqualFold(filepath.Ext(filename), ".mp3") || len(data) < 3 {
+		return false
+	}
+	return string(data[:3]) == "ID3" || (data[0] == 0xff && data[1]&0xe0 == 0xe0)
 }

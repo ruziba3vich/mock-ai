@@ -24,15 +24,15 @@ var questionTypes = map[string]struct{}{
 type Repository interface {
 	LearningRepository
 	ListPublishedContent(ctx context.Context, kind string) ([]ManagedContent, error)
-	ListExams(ctx context.Context) ([]ExamSummary, error)
-	GetExam(ctx context.Context, examID string) (Exam, error)
+	ListExams(ctx context.Context, userID string) ([]ExamSummary, error)
+	GetExam(ctx context.Context, userID, examID string) (Exam, error)
 	StartAttempt(ctx context.Context, userID, versionID string) (Attempt, error)
 	GetAttempt(ctx context.Context, userID, attemptID string) (Attempt, error)
 	SaveAnswer(ctx context.Context, userID, attemptID, questionID string, values []string) (SavedAnswer, error)
 	SubmitAttempt(ctx context.Context, userID, attemptID string) (Attempt, error)
 	ListHistory(ctx context.Context, userID string, limit, offset int32) ([]HistoryItem, error)
 	GetProgress(ctx context.Context, userID string) ([]SkillProgress, error)
-	ListPracticeQuestions(ctx context.Context, skill, questionType string, limit int32) ([]PracticeQuestion, error)
+	ListPracticeQuestions(ctx context.Context, userID, skill, questionType string, limit int32) ([]PracticeQuestion, error)
 	CheckPracticeAnswer(ctx context.Context, userID, questionID string, values []string) (PracticeFeedback, error)
 	GetAttemptReview(ctx context.Context, userID, attemptID string) (AttemptReview, error)
 	GetStudyPlan(ctx context.Context, userID string) (StudyPlan, error)
@@ -44,7 +44,7 @@ func (s *Service) GetProgress(ctx context.Context, userID string) ([]SkillProgre
 	return s.repository.GetProgress(ctx, userID)
 }
 
-func (s *Service) ListPracticeQuestions(ctx context.Context, skill, questionType string, limit int32) ([]PracticeQuestion, error) {
+func (s *Service) ListPracticeQuestions(ctx context.Context, userID, skill, questionType string, limit int32) ([]PracticeQuestion, error) {
 	if skill != "" && skill != "reading" && skill != "listening" {
 		return nil, ErrNotFound
 	}
@@ -56,7 +56,7 @@ func (s *Service) ListPracticeQuestions(ctx context.Context, skill, questionType
 	if limit <= 0 || limit > 10 {
 		limit = 5
 	}
-	return s.repository.ListPracticeQuestions(ctx, skill, questionType, limit)
+	return s.repository.ListPracticeQuestions(ctx, userID, skill, questionType, limit)
 }
 
 func (s *Service) CheckPracticeAnswer(ctx context.Context, userID, questionID string, values []string) (PracticeFeedback, error) {
@@ -114,16 +114,16 @@ func (s *Service) ConfigureImporter(provider ImportProvider, model string, logge
 	}
 }
 
-func (s *Service) ListExams(ctx context.Context) ([]ExamSummary, error) {
-	return s.repository.ListExams(ctx)
+func (s *Service) ListExams(ctx context.Context, userID string) ([]ExamSummary, error) {
+	return s.repository.ListExams(ctx, userID)
 }
 
-func (s *Service) GetExam(ctx context.Context, examID string) (Exam, error) {
-	return s.repository.GetExam(ctx, examID)
+func (s *Service) GetExam(ctx context.Context, userID, examID string) (Exam, error) {
+	return s.repository.GetExam(ctx, userID, examID)
 }
 
 func (s *Service) StartAttempt(ctx context.Context, userID, examID string) (Attempt, error) {
-	exam, err := s.repository.GetExam(ctx, examID)
+	exam, err := s.repository.GetExam(ctx, userID, examID)
 	if err != nil {
 		return Attempt{}, err
 	}

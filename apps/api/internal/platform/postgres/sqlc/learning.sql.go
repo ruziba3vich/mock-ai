@@ -41,7 +41,7 @@ WITH candidate AS (
 )
 UPDATE content_imports i SET status='processing',updated_at=now()
 FROM candidate WHERE i.id=candidate.id
-RETURNING i.id,i.admin_author_id,i.filename,i.requested_skills,i.model,i.provider_file_uri
+RETURNING i.id,i.admin_author_id,i.filename,i.requested_skills,i.model,i.provider_file_uri,i.access_scope,i.owner_user_id
 `
 
 type ClaimContentImportRow struct {
@@ -51,6 +51,8 @@ type ClaimContentImportRow struct {
 	RequestedSkills string      `json:"requested_skills"`
 	Model           string      `json:"model"`
 	ProviderFileUri string      `json:"provider_file_uri"`
+	AccessScope     string      `json:"access_scope"`
+	OwnerUserID     pgtype.UUID `json:"owner_user_id"`
 }
 
 func (q *Queries) ClaimContentImport(ctx context.Context) (ClaimContentImportRow, error) {
@@ -63,6 +65,8 @@ func (q *Queries) ClaimContentImport(ctx context.Context) (ClaimContentImportRow
 		&i.RequestedSkills,
 		&i.Model,
 		&i.ProviderFileUri,
+		&i.AccessScope,
+		&i.OwnerUserID,
 	)
 	return i, err
 }
@@ -151,40 +155,54 @@ func (q *Queries) CreateContentBand(ctx context.Context, arg CreateContentBandPa
 }
 
 const createContentDraft = `-- name: CreateContentDraft :one
-INSERT INTO content_drafts(admin_author_id, data) VALUES ($1,$2) RETURNING id
+INSERT INTO content_drafts(admin_author_id,data,access_scope,owner_user_id) VALUES ($1,$2,$3,$4) RETURNING id
 `
 
 type CreateContentDraftParams struct {
 	AdminAuthorID pgtype.UUID `json:"admin_author_id"`
 	Data          []byte      `json:"data"`
+	AccessScope   string      `json:"access_scope"`
+	OwnerUserID   pgtype.UUID `json:"owner_user_id"`
 }
 
 func (q *Queries) CreateContentDraft(ctx context.Context, arg CreateContentDraftParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, createContentDraft, arg.AdminAuthorID, arg.Data)
+	row := q.db.QueryRow(ctx, createContentDraft,
+		arg.AdminAuthorID,
+		arg.Data,
+		arg.AccessScope,
+		arg.OwnerUserID,
+	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
 }
 
 const createContentExam = `-- name: CreateContentExam :one
-INSERT INTO exams(slug,created_by_admin) VALUES ($1,$2) RETURNING id
+INSERT INTO exams(slug,created_by_admin,access_scope,owner_user_id) VALUES ($1,$2,$3,$4) RETURNING id
 `
 
 type CreateContentExamParams struct {
 	Slug           string      `json:"slug"`
 	CreatedByAdmin pgtype.UUID `json:"created_by_admin"`
+	AccessScope    string      `json:"access_scope"`
+	OwnerUserID    pgtype.UUID `json:"owner_user_id"`
 }
 
 func (q *Queries) CreateContentExam(ctx context.Context, arg CreateContentExamParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, createContentExam, arg.Slug, arg.CreatedByAdmin)
+	row := q.db.QueryRow(ctx, createContentExam,
+		arg.Slug,
+		arg.CreatedByAdmin,
+		arg.AccessScope,
+		arg.OwnerUserID,
+	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
 }
 
 const createContentImport = `-- name: CreateContentImport :one
-INSERT INTO content_imports(admin_author_id,filename,size_bytes,sha256,requested_skills,model,provider_file_uri)
-VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id
+INSERT INTO content_imports(admin_author_id,filename,size_bytes,sha256,requested_skills,model,provider_file_uri,access_scope,owner_user_id)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id
 `
 
 type CreateContentImportParams struct {
@@ -195,6 +213,8 @@ type CreateContentImportParams struct {
 	RequestedSkills string      `json:"requested_skills"`
 	Model           string      `json:"model"`
 	ProviderFileUri string      `json:"provider_file_uri"`
+	AccessScope     string      `json:"access_scope"`
+	OwnerUserID     pgtype.UUID `json:"owner_user_id"`
 }
 
 func (q *Queries) CreateContentImport(ctx context.Context, arg CreateContentImportParams) (pgtype.UUID, error) {
@@ -206,6 +226,8 @@ func (q *Queries) CreateContentImport(ctx context.Context, arg CreateContentImpo
 		arg.RequestedSkills,
 		arg.Model,
 		arg.ProviderFileUri,
+		arg.AccessScope,
+		arg.OwnerUserID,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -281,6 +303,36 @@ func (q *Queries) CreateContentSection(ctx context.Context, arg CreateContentSec
 		arg.AudioUrl,
 		arg.Passage,
 		arg.Transcript,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createPrivateMedia = `-- name: CreatePrivateMedia :one
+INSERT INTO private_media(owner_user_id,admin_author_id,filename,mime_type,sha256,data)
+VALUES($1,$2,$3,$4,$5,$6)
+ON CONFLICT(owner_user_id,sha256) DO UPDATE SET filename=EXCLUDED.filename
+RETURNING id
+`
+
+type CreatePrivateMediaParams struct {
+	OwnerUserID   pgtype.UUID `json:"owner_user_id"`
+	AdminAuthorID pgtype.UUID `json:"admin_author_id"`
+	Filename      string      `json:"filename"`
+	MimeType      string      `json:"mime_type"`
+	Sha256        string      `json:"sha256"`
+	Data          []byte      `json:"data"`
+}
+
+func (q *Queries) CreatePrivateMedia(ctx context.Context, arg CreatePrivateMediaParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createPrivateMedia,
+		arg.OwnerUserID,
+		arg.AdminAuthorID,
+		arg.Filename,
+		arg.MimeType,
+		arg.Sha256,
+		arg.Data,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -368,6 +420,34 @@ func (q *Queries) GetOwnedMistakeKey(ctx context.Context, arg GetOwnedMistakeKey
 	return items, nil
 }
 
+const getPrivateMedia = `-- name: GetPrivateMedia :one
+SELECT filename,mime_type,data,created_at FROM private_media WHERE id=$1 AND owner_user_id=$2
+`
+
+type GetPrivateMediaParams struct {
+	ID          pgtype.UUID `json:"id"`
+	OwnerUserID pgtype.UUID `json:"owner_user_id"`
+}
+
+type GetPrivateMediaRow struct {
+	Filename  string             `json:"filename"`
+	MimeType  string             `json:"mime_type"`
+	Data      []byte             `json:"data"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetPrivateMedia(ctx context.Context, arg GetPrivateMediaParams) (GetPrivateMediaRow, error) {
+	row := q.db.QueryRow(ctx, getPrivateMedia, arg.ID, arg.OwnerUserID)
+	var i GetPrivateMediaRow
+	err := row.Scan(
+		&i.Filename,
+		&i.MimeType,
+		&i.Data,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getReminder = `-- name: GetReminder :one
 SELECT jsonb_build_object('enabled', COALESCE(r.enabled, false), 'local_time', COALESCE(r.local_time, '19:00'),
  'timezone', COALESCE(r.timezone, 'Asia/Tashkent'), 'telegram_linked', EXISTS(SELECT 1 FROM user_identities i WHERE i.user_id = u.id AND i.provider = 'telegram'))::jsonb AS data
@@ -400,14 +480,16 @@ func (q *Queries) GetWorkspace(ctx context.Context, arg GetWorkspaceParams) ([]b
 }
 
 const listContentDrafts = `-- name: ListContentDrafts :many
-SELECT id, exam_id, data, updated_at FROM content_drafts ORDER BY updated_at DESC LIMIT 100
+SELECT id, exam_id, data, access_scope, owner_user_id, updated_at FROM content_drafts ORDER BY updated_at DESC LIMIT 100
 `
 
 type ListContentDraftsRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	ExamID    pgtype.UUID        `json:"exam_id"`
-	Data      []byte             `json:"data"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID          pgtype.UUID        `json:"id"`
+	ExamID      pgtype.UUID        `json:"exam_id"`
+	Data        []byte             `json:"data"`
+	AccessScope string             `json:"access_scope"`
+	OwnerUserID pgtype.UUID        `json:"owner_user_id"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) ListContentDrafts(ctx context.Context) ([]ListContentDraftsRow, error) {
@@ -423,6 +505,8 @@ func (q *Queries) ListContentDrafts(ctx context.Context) ([]ListContentDraftsRow
 			&i.ID,
 			&i.ExamID,
 			&i.Data,
+			&i.AccessScope,
+			&i.OwnerUserID,
 			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -436,7 +520,7 @@ func (q *Queries) ListContentDrafts(ctx context.Context) ([]ListContentDraftsRow
 }
 
 const listContentImports = `-- name: ListContentImports :many
-SELECT id,filename,size_bytes,sha256,requested_skills,status,model,progress_current,progress_total,draft_ids,warnings,error_message,created_at,updated_at,completed_at
+SELECT id,filename,size_bytes,sha256,requested_skills,status,model,progress_current,progress_total,draft_ids,warnings,error_message,access_scope,owner_user_id,created_at,updated_at,completed_at
 FROM content_imports WHERE admin_author_id=$1 ORDER BY created_at DESC LIMIT 30
 `
 
@@ -453,6 +537,8 @@ type ListContentImportsRow struct {
 	DraftIds        []byte             `json:"draft_ids"`
 	Warnings        []byte             `json:"warnings"`
 	ErrorMessage    string             `json:"error_message"`
+	AccessScope     string             `json:"access_scope"`
+	OwnerUserID     pgtype.UUID        `json:"owner_user_id"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
@@ -480,6 +566,8 @@ func (q *Queries) ListContentImports(ctx context.Context, adminAuthorID pgtype.U
 			&i.DraftIds,
 			&i.Warnings,
 			&i.ErrorMessage,
+			&i.AccessScope,
+			&i.OwnerUserID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CompletedAt,
@@ -555,7 +643,7 @@ func (q *Queries) ListMistakes(ctx context.Context, userID pgtype.UUID) ([]ListM
 }
 
 const lockContentDraft = `-- name: LockContentDraft :one
-SELECT id, exam_id, author_id, data, updated_at, admin_author_id FROM content_drafts WHERE id = $1 FOR UPDATE
+SELECT id, exam_id, author_id, data, updated_at, admin_author_id, access_scope, owner_user_id FROM content_drafts WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockContentDraft(ctx context.Context, id pgtype.UUID) (ContentDraft, error) {
@@ -568,6 +656,8 @@ func (q *Queries) LockContentDraft(ctx context.Context, id pgtype.UUID) (Content
 		&i.Data,
 		&i.UpdatedAt,
 		&i.AdminAuthorID,
+		&i.AccessScope,
+		&i.OwnerUserID,
 	)
 	return i, err
 }
@@ -696,17 +786,39 @@ func (q *Queries) SetDraftExam(ctx context.Context, arg SetDraftExamParams) erro
 }
 
 const updateContentDraft = `-- name: UpdateContentDraft :one
-UPDATE content_drafts SET data = $2, updated_at = now() WHERE id = $1 RETURNING id
+UPDATE content_drafts SET data=$2,access_scope=$3,owner_user_id=$4,updated_at=now() WHERE id=$1 RETURNING id
 `
 
 type UpdateContentDraftParams struct {
-	ID   pgtype.UUID `json:"id"`
-	Data []byte      `json:"data"`
+	ID          pgtype.UUID `json:"id"`
+	Data        []byte      `json:"data"`
+	AccessScope string      `json:"access_scope"`
+	OwnerUserID pgtype.UUID `json:"owner_user_id"`
 }
 
 func (q *Queries) UpdateContentDraft(ctx context.Context, arg UpdateContentDraftParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, updateContentDraft, arg.ID, arg.Data)
+	row := q.db.QueryRow(ctx, updateContentDraft,
+		arg.ID,
+		arg.Data,
+		arg.AccessScope,
+		arg.OwnerUserID,
+	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const updateContentExamAccess = `-- name: UpdateContentExamAccess :exec
+UPDATE exams SET access_scope=$2, owner_user_id=$3, updated_at=now() WHERE id=$1
+`
+
+type UpdateContentExamAccessParams struct {
+	ID          pgtype.UUID `json:"id"`
+	AccessScope string      `json:"access_scope"`
+	OwnerUserID pgtype.UUID `json:"owner_user_id"`
+}
+
+func (q *Queries) UpdateContentExamAccess(ctx context.Context, arg UpdateContentExamAccessParams) error {
+	_, err := q.db.Exec(ctx, updateContentExamAccess, arg.ID, arg.AccessScope, arg.OwnerUserID)
+	return err
 }

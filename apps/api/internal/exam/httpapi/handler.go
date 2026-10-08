@@ -61,8 +61,9 @@ func (h *Handler) listPublishedContent(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listPracticeQuestions(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 32)
+	user, _ := identityhttp.UserFromContext(r.Context())
 	questions, err := h.service.ListPracticeQuestions(
-		r.Context(), r.URL.Query().Get("skill"), r.URL.Query().Get("type"), int32(limit),
+		r.Context(), user.ID, r.URL.Query().Get("skill"), r.URL.Query().Get("type"), int32(limit),
 	)
 	if err != nil {
 		h.fail(w, err)
@@ -143,7 +144,8 @@ func (h *Handler) progress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listExams(w http.ResponseWriter, r *http.Request) {
-	exams, err := h.service.ListExams(r.Context())
+	user, _ := identityhttp.UserFromContext(r.Context())
+	exams, err := h.service.ListExams(r.Context(), user.ID)
 	if err != nil {
 		h.fail(w, err)
 		return
@@ -152,7 +154,8 @@ func (h *Handler) listExams(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getExam(w http.ResponseWriter, r *http.Request) {
-	exam, err := h.service.GetExam(r.Context(), r.PathValue("exam_id"))
+	user, _ := identityhttp.UserFromContext(r.Context())
+	exam, err := h.service.GetExam(r.Context(), user.ID, r.PathValue("exam_id"))
 	if err != nil {
 		h.fail(w, err)
 		return

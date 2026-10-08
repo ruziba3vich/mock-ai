@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,6 +130,8 @@ func (r *Repository) ListDrafts(ctx context.Context) ([]app.Draft, error) {
 		if e = json.Unmarshal(row.Data, &c); e != nil {
 			return nil, e
 		}
+		c.AccessScope = row.AccessScope
+		c.OwnerUserID = uuidString(row.OwnerUserID)
 		out = append(out, app.Draft{ID: uuidString(row.ID), ExamID: uuidString(row.ExamID), Data: c})
 	}
 	return out, nil
@@ -138,19 +141,23 @@ func (r *Repository) SaveDraft(ctx context.Context, u, id string, c app.Content)
 	if e != nil {
 		return "", e
 	}
+	ownerID, e := optionalUUID(c.OwnerUserID)
+	if e != nil {
+		return "", app.ErrInvalidProfile
+	}
 	if id == "" {
 		uid, e := parseUUID(u)
 		if e != nil {
 			return "", app.ErrNotFound
 		}
-		key, e := r.queries.CreateContentDraft(ctx, db.CreateContentDraftParams{AdminAuthorID: uid, Data: b})
+		key, e := r.queries.CreateContentDraft(ctx, db.CreateContentDraftParams{AdminAuthorID: uid, Data: b, AccessScope: c.AccessScope, OwnerUserID: ownerID})
 		return uuidString(key), e
 	}
 	key, e := parseUUID(id)
 	if e != nil {
 		return "", app.ErrNotFound
 	}
-	_, e = r.queries.UpdateContentDraft(ctx, db.UpdateContentDraftParams{ID: key, Data: b})
+	_, e = r.queries.UpdateContentDraft(ctx, db.UpdateContentDraftParams{ID: key, Data: b, AccessScope: c.AccessScope, OwnerUserID: ownerID})
 	return id, learningError(e)
 }
 func (r *Repository) PublishDraft(ctx context.Context, id string) (string, error) {
@@ -172,18 +179,23 @@ func (r *Repository) PublishDraft(ctx context.Context, id string) (string, error
 	if e = json.Unmarshal(draft.Data, &c); e != nil {
 		return "", e
 	}
+	c.AccessScope = draft.AccessScope
+	c.OwnerUserID = uuidString(draft.OwnerUserID)
 	if e = app.ValidateContent(c, true); e != nil {
 		return "", e
 	}
 	examID := draft.ExamID
 	if !examID.Valid {
-		examID, e = q.CreateContentExam(ctx, db.CreateContentExamParams{Slug: "content-" + uuid.NewString(), CreatedByAdmin: draft.AdminAuthorID})
+		examID, e = q.CreateContentExam(ctx, db.CreateContentExamParams{Slug: "content-" + uuid.NewString(), CreatedByAdmin: draft.AdminAuthorID, AccessScope: draft.AccessScope, OwnerUserID: draft.OwnerUserID})
 		if e != nil {
 			return "", e
 		}
 		if e = q.SetDraftExam(ctx, db.SetDraftExamParams{ID: key, ExamID: examID}); e != nil {
 			return "", e
 		}
+	}
+	if e = q.UpdateContentExamAccess(ctx, db.UpdateContentExamAccessParams{ID: examID, AccessScope: draft.AccessScope, OwnerUserID: draft.OwnerUserID}); e != nil {
+		return "", e
 	}
 	if e = q.ArchiveContentVersions(ctx, examID); e != nil {
 		return "", e
@@ -229,12 +241,16 @@ func (r *Repository) PublishDraft(ctx context.Context, id string) (string, error
 	return uuidString(examID), nil
 }
 
-func (r *Repository) CreateImport(ctx context.Context, adminID, filename string, size int64, digest, skills, model, uri string) (string, error) {
+func (r *Repository) CreateImport(ctx context.Context, adminID, filename string, size int64, digest, skills, model, uri, accessScope, ownerUserID string) (string, error) {
 	uid, e := parseUUID(adminID)
 	if e != nil {
 		return "", app.ErrNotFound
 	}
-	id, e := r.queries.CreateContentImport(ctx, db.CreateContentImportParams{AdminAuthorID: uid, Filename: filename, SizeBytes: size, Sha256: digest, RequestedSkills: skills, Model: model, ProviderFileUri: uri})
+	ownerID, e := optionalUUID(ownerUserID)
+	if e != nil {
+		return "", app.ErrInvalidProfile
+	}
+	id, e := r.queries.CreateContentImport(ctx, db.CreateContentImportParams{AdminAuthorID: uid, Filename: filename, SizeBytes: size, Sha256: digest, RequestedSkills: skills, Model: model, ProviderFileUri: uri, AccessScope: accessScope, OwnerUserID: ownerID})
 	return uuidString(id), e
 }
 
@@ -256,7 +272,7 @@ func (r *Repository) ListImports(ctx context.Context, adminID string) ([]app.Con
 		if e = json.Unmarshal(row.Warnings, &warnings); e != nil {
 			return nil, e
 		}
-		item := app.ContentImport{ID: uuidString(row.ID), Filename: row.Filename, SizeBytes: row.SizeBytes, SHA256: row.Sha256, RequestedSkills: row.RequestedSkills, Status: row.Status, Model: row.Model, ProgressCurrent: row.ProgressCurrent, ProgressTotal: row.ProgressTotal, DraftIDs: drafts, Warnings: warnings, ErrorMessage: row.ErrorMessage}
+		item := app.ContentImport{ID: uuidString(row.ID), Filename: row.Filename, SizeBytes: row.SizeBytes, SHA256: row.Sha256, RequestedSkills: row.RequestedSkills, Status: row.Status, Model: row.Model, ProgressCurrent: row.ProgressCurrent, ProgressTotal: row.ProgressTotal, DraftIDs: drafts, Warnings: warnings, ErrorMessage: row.ErrorMessage, AccessScope: row.AccessScope, OwnerUserID: uuidString(row.OwnerUserID)}
 		item.CreatedAt = row.CreatedAt.Time
 		item.UpdatedAt = row.UpdatedAt.Time
 		if row.CompletedAt.Valid {
@@ -272,7 +288,44 @@ func (r *Repository) ClaimImport(ctx context.Context) (app.ClaimedImport, error)
 	if e != nil {
 		return app.ClaimedImport{}, learningError(e)
 	}
-	return app.ClaimedImport{ID: uuidString(row.ID), AdminID: uuidString(row.AdminAuthorID), Filename: row.Filename, Skills: row.RequestedSkills, Model: row.Model, FileURI: row.ProviderFileUri}, nil
+	return app.ClaimedImport{ID: uuidString(row.ID), AdminID: uuidString(row.AdminAuthorID), Filename: row.Filename, Skills: row.RequestedSkills, Model: row.Model, FileURI: row.ProviderFileUri, AccessScope: row.AccessScope, OwnerUserID: uuidString(row.OwnerUserID)}, nil
+}
+
+func optionalUUID(value string) (pgtype.UUID, error) {
+	if value == "" {
+		return pgtype.UUID{}, nil
+	}
+	return parseUUID(value)
+}
+
+func (r *Repository) SavePrivateMedia(ctx context.Context, adminID, ownerID, filename, mime string, data []byte) (string, error) {
+	adminUUID, e := parseUUID(adminID)
+	if e != nil {
+		return "", app.ErrNotFound
+	}
+	ownerUUID, e := parseUUID(ownerID)
+	if e != nil {
+		return "", app.ErrInvalidProfile
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(data))
+	id, e := r.queries.CreatePrivateMedia(ctx, db.CreatePrivateMediaParams{OwnerUserID: ownerUUID, AdminAuthorID: adminUUID, Filename: filename, MimeType: mime, Sha256: digest, Data: data})
+	return uuidString(id), e
+}
+
+func (r *Repository) GetPrivateMedia(ctx context.Context, userID, mediaID string) (app.PrivateMedia, error) {
+	uid, e := parseUUID(userID)
+	if e != nil {
+		return app.PrivateMedia{}, app.ErrNotFound
+	}
+	mid, e := parseUUID(mediaID)
+	if e != nil {
+		return app.PrivateMedia{}, app.ErrNotFound
+	}
+	row, e := r.queries.GetPrivateMedia(ctx, db.GetPrivateMediaParams{ID: mid, OwnerUserID: uid})
+	if e != nil {
+		return app.PrivateMedia{}, learningError(e)
+	}
+	return app.PrivateMedia{Filename: row.Filename, MimeType: row.MimeType, Data: row.Data, CreatedAt: row.CreatedAt.Time}, nil
 }
 func (r *Repository) SetImportTotal(ctx context.Context, id string, total int32) error {
 	key, e := parseUUID(id)

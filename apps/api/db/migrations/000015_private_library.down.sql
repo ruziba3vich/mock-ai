@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS private_media;
+ALTER TABLE content_imports DROP CONSTRAINT IF EXISTS imports_private_owner;
+ALTER TABLE content_imports DROP COLUMN IF EXISTS owner_user_id;
+ALTER TABLE content_imports DROP COLUMN IF EXISTS access_scope;
+ALTER TABLE content_drafts DROP CONSTRAINT IF EXISTS drafts_private_owner;
+ALTER TABLE content_drafts DROP COLUMN IF EXISTS owner_user_id;
+ALTER TABLE content_drafts DROP COLUMN IF EXISTS access_scope;
+ALTER TABLE exams DROP CONSTRAINT IF EXISTS exams_private_owner;
+DROP INDEX IF EXISTS exams_private_owner_idx;
+ALTER TABLE exams DROP COLUMN IF EXISTS owner_user_id;
+ALTER TABLE exams DROP COLUMN IF EXISTS access_scope;

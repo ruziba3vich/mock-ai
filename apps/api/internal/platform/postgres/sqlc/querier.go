@@ -42,6 +42,7 @@ type Querier interface {
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (UserIdentity, error)
 	CreateManagedContent(ctx context.Context, arg CreateManagedContentParams) (ManagedContent, error)
 	CreatePasswordCredential(ctx context.Context, arg CreatePasswordCredentialParams) error
+	CreatePrivateMedia(ctx context.Context, arg CreatePrivateMediaParams) (pgtype.UUID, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateSpeaking(ctx context.Context, arg CreateSpeakingParams) (SpeakingSession, error)
 	CreateSpeakingTurn(ctx context.Context, arg CreateSpeakingTurnParams) error
@@ -75,9 +76,10 @@ type Querier interface {
 	GetCommunityStats(ctx context.Context, userID pgtype.UUID) (GetCommunityStatsRow, error)
 	GetOwnedMistakeKey(ctx context.Context, arg GetOwnedMistakeKeyParams) ([]GetOwnedMistakeKeyRow, error)
 	GetPasswordLogin(ctx context.Context, lower string) (GetPasswordLoginRow, error)
-	GetPracticeAnswerKey(ctx context.Context, id pgtype.UUID) ([]GetPracticeAnswerKeyRow, error)
+	GetPracticeAnswerKey(ctx context.Context, arg GetPracticeAnswerKeyParams) ([]GetPracticeAnswerKeyRow, error)
 	GetPrimaryAIKey(ctx context.Context) ([]byte, error)
-	GetPublishedExam(ctx context.Context, id pgtype.UUID) (GetPublishedExamRow, error)
+	GetPrivateMedia(ctx context.Context, arg GetPrivateMediaParams) (GetPrivateMediaRow, error)
+	GetPublishedExam(ctx context.Context, arg GetPublishedExamParams) (GetPublishedExamRow, error)
 	GetQuestionTypePerformance(ctx context.Context, studentID pgtype.UUID) ([]GetQuestionTypePerformanceRow, error)
 	GetReminder(ctx context.Context, id pgtype.UUID) ([]byte, error)
 	GetSpeaking(ctx context.Context, arg GetSpeakingParams) (SpeakingSession, error)
@@ -102,7 +104,7 @@ type Querier interface {
 	ListMistakes(ctx context.Context, userID pgtype.UUID) ([]ListMistakesRow, error)
 	ListPracticeQuestions(ctx context.Context, arg ListPracticeQuestionsParams) ([]ListPracticeQuestionsRow, error)
 	ListPublishedContent(ctx context.Context, kind string) ([]ManagedContent, error)
-	ListPublishedExams(ctx context.Context) ([]ListPublishedExamsRow, error)
+	ListPublishedExams(ctx context.Context, userID pgtype.UUID) ([]ListPublishedExamsRow, error)
 	ListQuestionOptions(ctx context.Context, questionID pgtype.UUID) ([]QuestionOption, error)
 	ListSectionQuestions(ctx context.Context, sectionID pgtype.UUID) ([]ListSectionQuestionsRow, error)
 	ListSpeaking(ctx context.Context, userID pgtype.UUID) ([]SpeakingSession, error)
@@ -147,6 +149,7 @@ type Querier interface {
 	SpeakingTurns(ctx context.Context, sessionID pgtype.UUID) ([]SpeakingTurnsRow, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	UpdateContentDraft(ctx context.Context, arg UpdateContentDraftParams) (pgtype.UUID, error)
+	UpdateContentExamAccess(ctx context.Context, arg UpdateContentExamAccessParams) error
 	UpdateExternalProfile(ctx context.Context, arg UpdateExternalProfileParams) (User, error)
 	UpdateManagedContent(ctx context.Context, arg UpdateManagedContentParams) (ManagedContent, error)
 	UpdateStudentProfile(ctx context.Context, arg UpdateStudentProfileParams) (StudentProfile, error)

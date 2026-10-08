@@ -22,8 +22,14 @@ WHERE q.id = $1
   AND ev.status = 'published'
   AND ev.purpose = 'practice'
   AND e.archived_at IS NULL
+  AND (e.access_scope='public' OR e.owner_user_id=$2)
 ORDER BY aa.position
 `
+
+type GetPracticeAnswerKeyParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
 
 type GetPracticeAnswerKeyRow struct {
 	ID              pgtype.UUID  `json:"id"`
@@ -33,8 +39,8 @@ type GetPracticeAnswerKeyRow struct {
 	IsCaseSensitive bool         `json:"is_case_sensitive"`
 }
 
-func (q *Queries) GetPracticeAnswerKey(ctx context.Context, id pgtype.UUID) ([]GetPracticeAnswerKeyRow, error) {
-	rows, err := q.db.Query(ctx, getPracticeAnswerKey, id)
+func (q *Queries) GetPracticeAnswerKey(ctx context.Context, arg GetPracticeAnswerKeyParams) ([]GetPracticeAnswerKeyRow, error) {
+	rows, err := q.db.Query(ctx, getPracticeAnswerKey, arg.ID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +83,13 @@ WHERE e.id = $1
   AND ev.status = 'published'
   AND ev.purpose = 'mock'
   AND e.archived_at IS NULL
+  AND (e.access_scope='public' OR e.owner_user_id=$2)
 `
+
+type GetPublishedExamParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
 
 type GetPublishedExamRow struct {
 	ID              pgtype.UUID        `json:"id"`
@@ -92,8 +104,8 @@ type GetPublishedExamRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 }
 
-func (q *Queries) GetPublishedExam(ctx context.Context, id pgtype.UUID) (GetPublishedExamRow, error) {
-	row := q.db.QueryRow(ctx, getPublishedExam, id)
+func (q *Queries) GetPublishedExam(ctx context.Context, arg GetPublishedExamParams) (GetPublishedExamRow, error) {
+	row := q.db.QueryRow(ctx, getPublishedExam, arg.ID, arg.UserID)
 	var i GetPublishedExamRow
 	err := row.Scan(
 		&i.ID,
@@ -177,16 +189,18 @@ JOIN exams e ON e.id = ev.exam_id
 WHERE ev.status = 'published'
   AND ev.purpose = 'practice'
   AND e.archived_at IS NULL
-  AND ($1::text = '' OR ev.skill::text = $1::text)
-  AND ($2::text = '' OR q.type::text = $2::text)
+  AND (e.access_scope='public' OR e.owner_user_id=$1)
+  AND ($2::text = '' OR ev.skill::text = $2::text)
+  AND ($3::text = '' OR q.type::text = $3::text)
 ORDER BY random()
-LIMIT $3
+LIMIT $4
 `
 
 type ListPracticeQuestionsParams struct {
-	Skill        string `json:"skill"`
-	QuestionType string `json:"question_type"`
-	ResultLimit  int32  `json:"result_limit"`
+	UserID       pgtype.UUID `json:"user_id"`
+	Skill        string      `json:"skill"`
+	QuestionType string      `json:"question_type"`
+	ResultLimit  int32       `json:"result_limit"`
 }
 
 type ListPracticeQuestionsRow struct {
@@ -206,7 +220,12 @@ type ListPracticeQuestionsRow struct {
 }
 
 func (q *Queries) ListPracticeQuestions(ctx context.Context, arg ListPracticeQuestionsParams) ([]ListPracticeQuestionsRow, error) {
-	rows, err := q.db.Query(ctx, listPracticeQuestions, arg.Skill, arg.QuestionType, arg.ResultLimit)
+	rows, err := q.db.Query(ctx, listPracticeQuestions,
+		arg.UserID,
+		arg.Skill,
+		arg.QuestionType,
+		arg.ResultLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -258,6 +277,7 @@ JOIN questions q ON q.section_id = es.id
 WHERE ev.status = 'published'
   AND ev.purpose = 'mock'
   AND e.archived_at IS NULL
+  AND (e.access_scope='public' OR e.owner_user_id=$1)
 GROUP BY e.id, ev.id
 ORDER BY ev.published_at DESC
 `
@@ -275,8 +295,8 @@ type ListPublishedExamsRow struct {
 	QuestionCount   int32              `json:"question_count"`
 }
 
-func (q *Queries) ListPublishedExams(ctx context.Context) ([]ListPublishedExamsRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedExams)
+func (q *Queries) ListPublishedExams(ctx context.Context, userID pgtype.UUID) ([]ListPublishedExamsRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedExams, userID)
 	if err != nil {
 		return nil, err
 	}

@@ -33,10 +33,12 @@ type ContentImport struct {
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	CompletedAt     time.Time `json:"completed_at,omitempty"`
+	AccessScope     string    `json:"access_scope"`
+	OwnerUserID     string    `json:"owner_user_id"`
 }
 
 type ClaimedImport struct {
-	ID, AdminID, Filename, Skills, Model, FileURI string
+	ID, AdminID, Filename, Skills, Model, FileURI, AccessScope, OwnerUserID string
 }
 
 type ImportProvider interface {
@@ -44,7 +46,7 @@ type ImportProvider interface {
 	Extract(context.Context, string, string, string) ([]Content, []string, error)
 }
 
-func (s *Service) CreateImport(ctx context.Context, adminID, filename, skills string, rights bool, size int64, file io.Reader) (string, error) {
+func (s *Service) CreateImport(ctx context.Context, adminID, filename, skills, accessScope, ownerID string, rights bool, size int64, file io.Reader) (string, error) {
 	if s.importer == nil {
 		return "", ErrImportUnavailable
 	}
@@ -55,6 +57,12 @@ func (s *Service) CreateImport(ctx context.Context, adminID, filename, skills st
 	if skills != "all" && skills != "reading" && skills != "listening" {
 		return "", fmt.Errorf("%w: choose Reading, Listening or both", ErrInvalidProfile)
 	}
+	if accessScope == "" {
+		accessScope = "public"
+	}
+	if accessScope != "public" && accessScope != "private" || (accessScope == "private") != (len(ownerID) == 36) {
+		return "", fmt.Errorf("%w: private imports require one owner", ErrInvalidProfile)
+	}
 	var head [5]byte
 	if _, err := io.ReadFull(file, head[:]); err != nil || !bytes.Equal(head[:], []byte("%PDF-")) {
 		return "", fmt.Errorf("%w: the uploaded file is not a PDF", ErrInvalidProfile)
@@ -64,7 +72,7 @@ func (s *Service) CreateImport(ctx context.Context, adminID, filename, skills st
 	if err != nil {
 		return "", ErrImportUnavailable
 	}
-	return s.repository.CreateImport(ctx, adminID, filename, size, digest, skills, s.importModel, uri)
+	return s.repository.CreateImport(ctx, adminID, filename, size, digest, skills, s.importModel, uri, accessScope, ownerID)
 }
 
 func (s *Service) ListImports(ctx context.Context, adminID string) ([]ContentImport, error) {
@@ -109,6 +117,7 @@ func (s *Service) runOneImport(ctx context.Context) {
 	}
 	for i := range contents {
 		normalizeImported(&contents[i])
+		contents[i].AccessScope, contents[i].OwnerUserID = job.AccessScope, job.OwnerUserID
 		if err = ValidateContent(contents[i], false); err != nil {
 			_ = s.repository.FailImport(ctx, job.ID, "An extracted test failed validation. No content was published; review the source and retry.")
 			return

@@ -27,8 +27,12 @@ func New(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool, queries: db.New(pool)}
 }
 
-func (r *Repository) ListExams(ctx context.Context) ([]application.ExamSummary, error) {
-	rows, err := r.queries.ListPublishedExams(ctx)
+func (r *Repository) ListExams(ctx context.Context, userID string) ([]application.ExamSummary, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return nil, application.ErrNotFound
+	}
+	rows, err := r.queries.ListPublishedExams(ctx, uid)
 	if err != nil {
 		return nil, fmt.Errorf("list published exams: %w", err)
 	}
@@ -48,12 +52,16 @@ func (r *Repository) ListExams(ctx context.Context) ([]application.ExamSummary, 
 	return exams, nil
 }
 
-func (r *Repository) GetExam(ctx context.Context, examID string) (application.Exam, error) {
+func (r *Repository) GetExam(ctx context.Context, userID, examID string) (application.Exam, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return application.Exam{}, application.ErrNotFound
+	}
 	id, err := parseUUID(examID)
 	if err != nil {
 		return application.Exam{}, application.ErrNotFound
 	}
-	row, err := r.queries.GetPublishedExam(ctx, id)
+	row, err := r.queries.GetPublishedExam(ctx, db.GetPublishedExamParams{ID: id, UserID: uid})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.Exam{}, application.ErrNotFound
 	}
@@ -309,9 +317,13 @@ func (r *Repository) GetProgress(ctx context.Context, userID string) ([]applicat
 	return progress, nil
 }
 
-func (r *Repository) ListPracticeQuestions(ctx context.Context, skill, questionType string, limit int32) ([]application.PracticeQuestion, error) {
+func (r *Repository) ListPracticeQuestions(ctx context.Context, userID, skill, questionType string, limit int32) ([]application.PracticeQuestion, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return nil, application.ErrNotFound
+	}
 	rows, err := r.queries.ListPracticeQuestions(ctx, db.ListPracticeQuestionsParams{
-		Skill: skill, QuestionType: questionType, ResultLimit: limit,
+		UserID: uid, Skill: skill, QuestionType: questionType, ResultLimit: limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list practice questions: %w", err)
@@ -346,7 +358,7 @@ func (r *Repository) CheckPracticeAnswer(ctx context.Context, userID, questionID
 	if err != nil {
 		return application.PracticeFeedback{}, application.ErrNotFound
 	}
-	rows, err := r.queries.GetPracticeAnswerKey(ctx, id)
+	rows, err := r.queries.GetPracticeAnswerKey(ctx, db.GetPracticeAnswerKeyParams{ID: id, UserID: userUUID})
 	if err != nil {
 		return application.PracticeFeedback{}, fmt.Errorf("get practice answer key: %w", err)
 	}

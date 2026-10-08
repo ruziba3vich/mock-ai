@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -53,11 +54,19 @@ type Content struct {
 	Instructions string           `json:"instructions"`
 	Sections     []ContentSection `json:"sections"`
 	Bands        []ContentBand    `json:"bands"`
+	AccessScope  string           `json:"access_scope"`
+	OwnerUserID  string           `json:"owner_user_id"`
 }
 type Draft struct {
 	ID     string  `json:"id"`
 	ExamID string  `json:"exam_id"`
 	Data   Content `json:"data"`
+}
+type PrivateMedia struct {
+	Filename  string
+	MimeType  string
+	Data      []byte
+	CreatedAt time.Time
 }
 type LearningRepository interface {
 	GetCommunity(context.Context, string) (Community, error)
@@ -71,7 +80,7 @@ type LearningRepository interface {
 	ListDrafts(context.Context) ([]Draft, error)
 	SaveDraft(context.Context, string, string, Content) (string, error)
 	PublishDraft(context.Context, string) (string, error)
-	CreateImport(context.Context, string, string, int64, string, string, string, string) (string, error)
+	CreateImport(context.Context, string, string, int64, string, string, string, string, string, string) (string, error)
 	ListImports(context.Context, string) ([]ContentImport, error)
 	ClaimImport(context.Context) (ClaimedImport, error)
 	SetImportTotal(context.Context, string, int32) error
@@ -79,6 +88,8 @@ type LearningRepository interface {
 	CompleteImport(context.Context, string, []string) error
 	FailImport(context.Context, string, string) error
 	FailStaleImports(context.Context) error
+	SavePrivateMedia(context.Context, string, string, string, string, []byte) (string, error)
+	GetPrivateMedia(context.Context, string, string) (PrivateMedia, error)
 }
 
 func (s *Service) GetWorkspace(ctx context.Context, u, a string) (Workspace, error) {
@@ -124,6 +135,9 @@ func (s *Service) ListDrafts(ctx context.Context) ([]Draft, error) {
 	return s.repository.ListDrafts(ctx)
 }
 func (s *Service) SaveDraft(ctx context.Context, u, id string, c Content) (string, error) {
+	if c.AccessScope == "" {
+		c.AccessScope = "public"
+	}
 	for i := range c.Sections {
 		for j := range c.Sections[i].Questions {
 			q := &c.Sections[i].Questions[j]
@@ -184,6 +198,12 @@ func ValidateContent(c Content, publish bool) error {
 	if c.Purpose != "practice" && c.Purpose != "mock" {
 		return invalid("choose practice or mock")
 	}
+	if c.AccessScope != "public" && c.AccessScope != "private" {
+		return invalid("choose public or private access")
+	}
+	if (c.AccessScope == "private") != (strings.TrimSpace(c.OwnerUserID) != "") {
+		return invalid("private content requires exactly one owner")
+	}
 	if c.Duration < 60 || c.Duration > 14400 {
 		return invalid("duration must be 1–240 minutes")
 	}
@@ -203,8 +223,9 @@ func ValidateContent(c Content, publish bool) error {
 		}
 		if c.Skill == "listening" {
 			u, e := url.Parse(section.AudioURL)
-			if e != nil || u.Scheme != "https" || u.Host == "" {
-				return invalid("Listening needs an HTTPS audio recording")
+			privatePath := c.AccessScope == "private" && u.Scheme == "" && u.Host == "" && privateMediaPath(u.Path)
+			if e != nil || (!privatePath && (u.Scheme != "https" || u.Host == "")) {
+				return invalid("Listening needs an HTTPS recording or owned private audio")
 			}
 		}
 		for _, q := range section.Questions {
@@ -278,4 +299,25 @@ func ValidateContent(c Content, publish bool) error {
 		}
 	}
 	return nil
+}
+
+func privateMediaPath(path string) bool {
+	const prefix = "/api/v1/private-media/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	id := strings.TrimPrefix(path, prefix)
+	return filepath.Base(path) == id && len(id) == 36
+}
+
+func (s *Service) SavePrivateMedia(ctx context.Context, adminID, ownerID, filename, mime string, data []byte) (string, error) {
+	filename = filepath.Base(strings.TrimSpace(filename))
+	if filename == "" || filename == "." || mime != "audio/mpeg" || len(data) < 128 || len(data) > 25<<20 || len(ownerID) != 36 {
+		return "", ErrInvalidProfile
+	}
+	return s.repository.SavePrivateMedia(ctx, adminID, ownerID, filename, mime, data)
+}
+
+func (s *Service) GetPrivateMedia(ctx context.Context, userID, id string) (PrivateMedia, error) {
+	return s.repository.GetPrivateMedia(ctx, userID, id)
 }

@@ -513,6 +513,8 @@ type ContentDraft struct {
 	Data          []byte             `json:"data"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	AdminAuthorID pgtype.UUID        `json:"admin_author_id"`
+	AccessScope   string             `json:"access_scope"`
+	OwnerUserID   pgtype.UUID        `json:"owner_user_id"`
 }
 
 type ContentImport struct {
@@ -533,6 +535,8 @@ type ContentImport struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+	AccessScope     string             `json:"access_scope"`
+	OwnerUserID     pgtype.UUID        `json:"owner_user_id"`
 }
 
 type Exam struct {
@@ -542,6 +546,8 @@ type Exam struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	ArchivedAt     pgtype.Timestamptz `json:"archived_at"`
 	CreatedByAdmin pgtype.UUID        `json:"created_by_admin"`
+	AccessScope    string             `json:"access_scope"`
+	OwnerUserID    pgtype.UUID        `json:"owner_user_id"`
 }
 
 type ExamSection struct {
@@ -609,6 +615,17 @@ type PracticeAnswer struct {
 	Answer      []byte             `json:"answer"`
 	IsCorrect   bool               `json:"is_correct"`
 	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+}
+
+type PrivateMedium struct {
+	ID            pgtype.UUID        `json:"id"`
+	OwnerUserID   pgtype.UUID        `json:"owner_user_id"`
+	AdminAuthorID pgtype.UUID        `json:"admin_author_id"`
+	Filename      string             `json:"filename"`
+	MimeType      string             `json:"mime_type"`
+	Sha256        string             `json:"sha256"`
+	Data          []byte             `json:"data"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type Question struct {

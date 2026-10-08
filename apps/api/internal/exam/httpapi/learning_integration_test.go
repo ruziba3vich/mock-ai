@@ -120,7 +120,7 @@ func TestLearningIntegration(t *testing.T) {
 	other := &http.Cookie{Name: "mock_ai_session", Value: otherSession.Token}
 	request("GET", "/api/v1/me/mistakes", nil, nil, 401)
 	request("GET", "/api/v1/admin/content", nil, cookie, 401)
-	exams, e := service.ListExams(context.Background())
+	exams, e := service.ListExams(context.Background(), student.ID)
 	if e != nil || len(exams) == 0 {
 		t.Fatal("missing exams", e)
 	}
@@ -137,7 +137,7 @@ func TestLearningIntegration(t *testing.T) {
 	if !strings.Contains(string(saved["notes"]), "Recheck the date") {
 		t.Fatal("notes not persisted")
 	}
-	practice, e := service.ListPracticeQuestions(context.Background(), "reading", "", 5)
+	practice, e := service.ListPracticeQuestions(context.Background(), student.ID, "reading", "", 5)
 	if e != nil || len(practice) == 0 {
 		t.Fatal("no practice", e)
 	}
@@ -300,7 +300,7 @@ func TestLearningIntegration(t *testing.T) {
 	if community(cookie).Stats.WeekPoints != 1 {
 		t.Fatal("empty mock earned points")
 	}
-	exam, e := service.GetExam(context.Background(), exams[0].ID)
+	exam, e := service.GetExam(context.Background(), student.ID, exams[0].ID)
 	if e != nil {
 		t.Fatal(e)
 	}
