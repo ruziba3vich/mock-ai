@@ -40,6 +40,19 @@ func (r *testRepo) ReleaseLive(context.Context, d.Session) error { r.released <-
 
 type testProvider struct{ url string }
 
+func TestPermanentProviderClose(t *testing.T) {
+	for _, code := range []websocket.StatusCode{1003, 1007, 1008} {
+		if !permanentClose(code) {
+			t.Fatalf("must not retry %d", code)
+		}
+	}
+	for _, code := range []websocket.StatusCode{-1, 1000, 1001, 1006, 1011, 1012, 1013} {
+		if permanentClose(code) {
+			t.Fatalf("transient close %d must remain recoverable", code)
+		}
+	}
+}
+
 func (p testProvider) ConnectLive(ctx context.Context) (*websocket.Conn, error) {
 	c, _, e := websocket.Dial(ctx, p.url, nil)
 	return c, e

@@ -138,11 +138,33 @@ func TestLearningIntegration(t *testing.T) {
 	if !strings.Contains(string(saved["notes"]), "Recheck the date") {
 		t.Fatal("notes not persisted")
 	}
+	// Production may contain only timed mocks. Their accessible questions must
+	// still support quick practice and checking answers without changing purpose.
+	rows, e := pool.Query(context.Background(), "UPDATE exam_versions SET purpose='mock' WHERE purpose='practice' RETURNING id::text")
+	if e != nil {
+		t.Fatal(e)
+	}
+	var practiceVersions []string
+	for rows.Next() {
+		var id string
+		if e = rows.Scan(&id); e != nil {
+			t.Fatal(e)
+		}
+		practiceVersions = append(practiceVersions, id)
+	}
+	if e = rows.Err(); e != nil {
+		t.Fatal(e)
+	}
+	rows.Close()
 	practice, e := service.ListPracticeQuestions(context.Background(), student.ID, "reading", "", 5)
 	if e != nil || len(practice) == 0 {
 		t.Fatal("no practice", e)
 	}
 	qid := practice[0].ID
+	request("POST", "/api/v1/practice/questions/"+qid+"/check", map[string]any{"values": []string{"mock practice answer"}}, cookie, 200)
+	if _, e = pool.Exec(context.Background(), "UPDATE exam_versions SET purpose='practice' WHERE id=ANY($1::uuid[])", practiceVersions); e != nil {
+		t.Fatal(e)
+	}
 	request("GET", "/api/v1/me/community", nil, nil, 401)
 	request("PUT", "/api/v1/me/community", app.CommunityProfile{Nickname: "x", Enabled: true}, cookie, 422)
 	request("PUT", "/api/v1/me/community", app.CommunityProfile{Nickname: "<script>", Enabled: true}, cookie, 422)

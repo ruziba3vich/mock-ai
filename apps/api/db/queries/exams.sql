@@ -79,7 +79,6 @@ JOIN exam_sections es ON es.id = q.section_id
 JOIN exam_versions ev ON ev.id = es.exam_version_id
 JOIN exams e ON e.id = ev.exam_id
 WHERE ev.status = 'published'
-  AND ev.purpose = 'practice'
   AND e.archived_at IS NULL
   AND (e.access_scope='public' OR e.owner_user_id=sqlc.arg(user_id))
   AND (sqlc.arg(skill)::text = '' OR ev.skill::text = sqlc.arg(skill)::text)
@@ -96,7 +95,6 @@ JOIN exams e ON e.id = ev.exam_id
 JOIN accepted_answers aa ON aa.question_id = q.id
 WHERE q.id = $1
   AND ev.status = 'published'
-  AND ev.purpose = 'practice'
   AND e.archived_at IS NULL
   AND (e.access_scope='public' OR e.owner_user_id=sqlc.arg(user_id))
 ORDER BY aa.position;

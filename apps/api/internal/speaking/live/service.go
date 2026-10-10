@@ -348,6 +348,16 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 				continue
 			}
 			if p.err != nil {
+				status := websocket.CloseStatus(p.err)
+				if s.Log != nil {
+					s.Log.Warn("live speaking upstream closed", "session_id", session.ID, "close_status", status, "position", pos)
+				}
+				// Authentication, policy and invalid setup errors cannot be repaired
+				// by reconnecting with the same credentials and configuration.
+				if permanentClose(status) {
+					_ = write(ctx, client, map[string]any{"type": "error", "retryable": false, "message": "Speaking is temporarily unavailable. Your completed answers are saved. Please try again later."})
+					return d.ErrUnavailable
+				}
 				if e = reconnectUpstream("read_closed"); e != nil {
 					return e
 				}
@@ -535,6 +545,10 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 			}
 		}
 	}
+}
+
+func permanentClose(status websocket.StatusCode) bool {
+	return status == websocket.StatusPolicyViolation || status == websocket.StatusUnsupportedData || status == websocket.StatusInvalidFramePayloadData
 }
 func jsonNumber(n int) string { b, _ := json.Marshal(n); return string(b) }
 
