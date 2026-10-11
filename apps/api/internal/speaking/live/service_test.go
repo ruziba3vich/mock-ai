@@ -114,7 +114,14 @@ func TestLiveProgressionWaitAndOutputGate(t *testing.T) {
 	tool := func(name string) {
 		send(provider, map[string]any{"toolCall": map[string]any{"functionCalls": []any{map[string]any{"id": "call", "name": name, "args": map[string]string{"question": "What is your typical weekday like?"}}}}})
 	}
-	receive(provider)
+	toolResult := func(message map[string]any) map[string]any {
+		t.Helper()
+		return message["toolResponse"].(map[string]any)["functionResponses"].([]any)[0].(map[string]any)["response"].(map[string]any)
+	}
+	setupMessage, _ := json.Marshal(receive(provider))
+	if !strings.Contains(string(setupMessage), "DELIVERY: sound attentive, warm and composed") {
+		t.Fatal("conversational delivery instructions missing from live setup")
+	}
 	send(provider, map[string]any{"setupComplete": map[string]any{}})
 	receive(client)
 	receive(provider)
@@ -134,7 +141,9 @@ func TestLiveProgressionWaitAndOutputGate(t *testing.T) {
 	}
 	// Noise/no transcript cannot advance, even if a provider proposes doing so.
 	tool("advance_question")
-	receive(provider)
+	if result := toolResult(receive(provider)); result["instruction"] != "Stay silent and wait for the student to finish." {
+		t.Fatal("noise must not receive a conversational acknowledgment", result)
+	}
 	if receive(client)["position"] != float64(0) {
 		t.Fatal("noise advanced question")
 	}
@@ -152,7 +161,9 @@ func TestLiveProgressionWaitAndOutputGate(t *testing.T) {
 	for _, name := range []string{"repeat_question", "clarify_question"} {
 		send(provider, map[string]any{"serverContent": map[string]any{"inputTranscription": map[string]string{"text": " Could you please explain the question?"}}})
 		send(provider, map[string]any{"toolCall": map[string]any{"functionCalls": []any{map[string]any{"id": "help", "name": name, "args": map[string]string{"explanation": "I am asking what you like about your work or studies."}}}}})
-		receive(provider)
+		if result := toolResult(receive(provider)); result["instruction"] != helpQuestionInstruction {
+			t.Fatal("missing natural same-question help instruction", result)
+		}
 		state := receive(client)
 		if state["position"] != float64(0) || state["phase"] != "examiner" {
 			t.Fatal("help request advanced or stayed silent")
@@ -177,7 +188,9 @@ func TestLiveProgressionWaitAndOutputGate(t *testing.T) {
 	}
 	send(provider, map[string]any{"serverContent": map[string]any{"inputTranscription": map[string]string{"text": "I study computer science because"}}})
 	tool("wait_for_student")
-	receive(provider)
+	if result := toolResult(receive(provider)); result["instruction"] != "Stay silent and wait for the student to finish." {
+		t.Fatal("thinking pause must remain silent", result)
+	}
 	if receive(client)["phase"] != "listening" {
 		t.Fatal("thinking pause interrupted")
 	}
@@ -185,14 +198,16 @@ func TestLiveProgressionWaitAndOutputGate(t *testing.T) {
 	send(provider, map[string]any{"serverContent": map[string]any{"modelTurn": map[string]any{"parts": []any{map[string]any{"inlineData": map[string]string{"data": "AAAAAA==", "mimeType": "audio/pcm;rate=24000"}}}}, "turnComplete": true}})
 	send(provider, map[string]any{"serverContent": map[string]any{"inputTranscription": map[string]string{"text": " I enjoy solving practical problems."}}})
 	tool("advance_question")
-	receive(provider)
+	if result := toolResult(receive(provider)); result["instruction"] != nextQuestionInstruction || result["question"] != "What is your typical weekday like?" {
+		t.Fatal("expected natural transition with separate unchanged question", result)
+	}
 	state := receive(client)
 	if state["position"] != float64(1) || state["phase"] != "examiner" {
 		t.Fatalf("did not advance: %v", state)
 	}
 	select {
 	case v := <-repo.saves:
-		if v.pos != 0 || len(v.wav) != 32044 || !strings.Contains(v.text, "practical problems") {
+		if v.pos != 0 || len(v.wav) != 32044 || !strings.Contains(v.text, "practical problems") || v.next != "What is your typical weekday like?" {
 			t.Fatal("answer not saved")
 		}
 	case <-ctx.Done():

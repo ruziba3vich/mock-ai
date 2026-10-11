@@ -452,7 +452,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 						allowOutput = true
 						outputBytes, outputRetries = 0, 0
 						phase = "examiner"
-						response = map[string]any{"question": helpSpeech, "instruction": "Say this aloud, then listen for the answer to the SAME question. Do not advance, give examples, suggest an answer, or evaluate the student."}
+						response = map[string]any{"question": helpSpeech, "instruction": helpQuestionInstruction}
 					case "advance_question", "finish_interview":
 						valid := Meaningful(transcript[helpStart:])
 						if _, err := d.ValidateAudio(Wave(pcm), session.Turns[pos].Seconds); err != nil {
@@ -488,7 +488,7 @@ func (s *Service) Run(parent context.Context, client *websocket.Conn, session d.
 								pos++
 								session.Turns[pos].Prompt = next
 								prepared = false
-								response = map[string]any{"position": pos, "question": next, "instruction": "Ask this approved question aloud. Then listen."}
+								response = map[string]any{"position": pos, "question": next, "instruction": nextQuestionInstruction}
 							}
 						}
 					}
