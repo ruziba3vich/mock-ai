@@ -43,13 +43,15 @@ func (q *Queries) AdminContentBreakdown(ctx context.Context) ([]AdminContentBrea
 
 const adminDashboardSummary = `-- name: AdminDashboardSummary :one
 SELECT
- (SELECT count(*) FROM users WHERE deleted_at IS NULL)::integer AS users,
- (SELECT count(*) FROM users WHERE deleted_at IS NULL AND created_at>=now()-interval '7 days')::integer AS new_users_7d,
- (SELECT count(DISTINCT user_id) FROM (
+ (SELECT count(*) FROM users WHERE deleted_at IS NULL AND coalesce(email,'') NOT LIKE '%@mock-ai.internal' AND coalesce(email,'') NOT LIKE '%@example.test' AND display_name NOT ILIKE '%E2E%')::integer AS users,
+ (SELECT count(*) FROM users WHERE deleted_at IS NULL AND coalesce(email,'') NOT LIKE '%@mock-ai.internal' AND coalesce(email,'') NOT LIKE '%@example.test' AND display_name NOT ILIKE '%E2E%' AND created_at>=now()-interval '7 days')::integer AS new_users_7d,
+ (SELECT count(DISTINCT active.user_id) FROM (
    SELECT user_id FROM community_activity WHERE occurred_at>=now()-interval '7 days'
+   UNION ALL SELECT user_id FROM attempts WHERE started_at>=now()-interval '7 days'
+   UNION ALL SELECT user_id FROM practice_answers WHERE attempted_at>=now()-interval '7 days'
    UNION ALL SELECT user_id FROM writing_submissions WHERE updated_at>=now()-interval '7 days'
    UNION ALL SELECT user_id FROM speaking_sessions WHERE updated_at>=now()-interval '7 days'
- ) active)::integer AS active_users_7d,
+ ) active JOIN users u ON u.id=active.user_id WHERE u.deleted_at IS NULL AND coalesce(u.email,'') NOT LIKE '%@mock-ai.internal' AND coalesce(u.email,'') NOT LIKE '%@example.test' AND u.display_name NOT ILIKE '%E2E%')::integer AS active_users_7d,
  (SELECT count(*) FROM attempts WHERE status='scored')::integer AS completed_mocks,
  coalesce((SELECT round(avg(band_score),1) FROM attempts WHERE status='scored'),0)::numeric AS average_band,
  (SELECT count(*) FROM writing_submissions WHERE status='completed')::integer AS writing_reports,
@@ -95,9 +97,15 @@ func (q *Queries) AdminDashboardSummary(ctx context.Context) (AdminDashboardSumm
 
 const adminDashboardTrend = `-- name: AdminDashboardTrend :many
 WITH days AS (SELECT generate_series(current_date-13,current_date,interval '1 day')::date AS activity_date),
-signups AS (SELECT created_at::date activity_date,count(*)::integer value FROM users WHERE created_at>=current_date-13 GROUP BY 1),
-activity AS (SELECT occurred_at::date activity_date,count(DISTINCT user_id)::integer value FROM community_activity WHERE occurred_at>=current_date-13 GROUP BY 1),
-attempts_by_day AS (SELECT started_at::date activity_date,count(*)::integer value FROM attempts WHERE started_at>=current_date-13 GROUP BY 1)
+signups AS (SELECT created_at::date activity_date,count(*)::integer value FROM users WHERE created_at>=current_date-13 AND deleted_at IS NULL AND coalesce(email,'') NOT LIKE '%@mock-ai.internal' AND coalesce(email,'') NOT LIKE '%@example.test' AND display_name NOT ILIKE '%E2E%' GROUP BY 1),
+activity AS (SELECT activity_at::date activity_date,count(DISTINCT user_id)::integer value FROM (
+ SELECT user_id,occurred_at activity_at FROM community_activity WHERE occurred_at>=current_date-13
+ UNION ALL SELECT user_id,started_at FROM attempts WHERE started_at>=current_date-13
+ UNION ALL SELECT user_id,attempted_at FROM practice_answers WHERE attempted_at>=current_date-13
+ UNION ALL SELECT user_id,updated_at FROM writing_submissions WHERE updated_at>=current_date-13
+ UNION ALL SELECT user_id,updated_at FROM speaking_sessions WHERE updated_at>=current_date-13
+) events JOIN users u ON u.id=events.user_id WHERE u.deleted_at IS NULL AND coalesce(u.email,'') NOT LIKE '%@mock-ai.internal' AND coalesce(u.email,'') NOT LIKE '%@example.test' AND u.display_name NOT ILIKE '%E2E%' GROUP BY 1),
+attempts_by_day AS (SELECT a.started_at::date activity_date,count(*)::integer value FROM attempts a JOIN users u ON u.id=a.user_id WHERE a.started_at>=current_date-13 AND u.deleted_at IS NULL AND coalesce(u.email,'') NOT LIKE '%@mock-ai.internal' AND coalesce(u.email,'') NOT LIKE '%@example.test' AND u.display_name NOT ILIKE '%E2E%' GROUP BY 1)
 SELECT d.activity_date,coalesce(s.value,0)::integer AS signups,coalesce(a.value,0)::integer AS active_students,coalesce(t.value,0)::integer AS attempts
 FROM days d LEFT JOIN signups s USING(activity_date) LEFT JOIN activity a USING(activity_date) LEFT JOIN attempts_by_day t USING(activity_date) ORDER BY d.activity_date
 `

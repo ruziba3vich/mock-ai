@@ -125,6 +125,18 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		}
 		respond(w, 200, map[string]any{"students": students})
 	})))
+	mux.Handle("GET /api/v1/admin/students/{student_id}", h.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		student, e := h.service.StudentProgress(r.Context(), r.PathValue("student_id"))
+		if e != nil {
+			if errors.Is(e, app.ErrStudentNotFound) {
+				fail(w, 404, e.Error())
+			} else {
+				fail(w, 500, "Student progress could not be loaded")
+			}
+			return
+		}
+		respond(w, 200, student)
+	})))
 	mux.Handle("GET /api/v1/admin/managed-content", h.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		v, e := h.service.ListContent(r.Context(), r.URL.Query().Get("kind"))
 		if e != nil {

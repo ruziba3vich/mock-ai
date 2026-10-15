@@ -10,9 +10,12 @@ import (
 	"time"
 )
 
-type Repository struct{ q *db.Queries }
+type Repository struct {
+	q *db.Queries
+	p *pgxpool.Pool
+}
 
-func New(p *pgxpool.Pool) *Repository  { return &Repository{db.New(p)} }
+func New(p *pgxpool.Pool) *Repository  { return &Repository{q: db.New(p), p: p} }
 func id(s string) (pgtype.UUID, error) { var v pgtype.UUID; e := v.Scan(s); return v, e }
 func str(v pgtype.UUID) string         { s, _ := v.Value(); return s.(string) }
 func (r *Repository) Create(ctx context.Context, email, name, hash string) (string, error) {
@@ -78,16 +81,142 @@ func (r *Repository) Dashboard(ctx context.Context) (app.Dashboard, error) {
 	return out, nil
 }
 func (r *Repository) ListStudents(ctx context.Context) ([]app.Student, error) {
-	rows, e := r.q.ListAdminStudents(ctx)
+	rows, e := r.p.Query(ctx, `
+SELECT u.id,u.display_name,coalesce(u.email,''),coalesce(t.profile->>'username',''),coalesce(t.provider_subject,''),u.created_at,
+ activity.last_activity,coalesce(a.total,0)::int,coalesce(a.completed,0)::int,coalesce(p.total,0)::int,
+ coalesce(w.completed,0)::int,coalesce(s.completed,0)::int,a.average_band,a.best_band,a.latest_band
+FROM users u
+LEFT JOIN LATERAL (SELECT profile,provider_subject FROM user_identities WHERE user_id=u.id AND provider='telegram' LIMIT 1) t ON true
+LEFT JOIN LATERAL (SELECT count(*) total,count(*) FILTER(WHERE status='scored') completed,avg(band_score)::float8 average_band,max(band_score)::float8 best_band,(array_agg(band_score ORDER BY scored_at DESC) FILTER(WHERE status='scored'))[1]::float8 latest_band,max(started_at) last_at FROM attempts WHERE user_id=u.id) a ON true
+LEFT JOIN LATERAL (SELECT count(*) total,max(attempted_at) last_at FROM practice_answers WHERE user_id=u.id) p ON true
+LEFT JOIN LATERAL (SELECT count(*) FILTER(WHERE status='completed') completed,max(updated_at) last_at FROM writing_submissions WHERE user_id=u.id) w ON true
+LEFT JOIN LATERAL (SELECT count(*) FILTER(WHERE status='completed') completed,max(updated_at) last_at FROM speaking_sessions WHERE user_id=u.id) s ON true
+LEFT JOIN LATERAL (SELECT max(v) last_activity FROM (VALUES(a.last_at),(p.last_at),(w.last_at),(s.last_at)) x(v)) activity ON true
+WHERE u.deleted_at IS NULL
+ AND coalesce(u.email,'') NOT LIKE '%@mock-ai.internal'
+ AND coalesce(u.email,'') NOT LIKE '%@example.test'
+ AND u.display_name NOT ILIKE '%E2E%'
+ORDER BY coalesce(activity.last_activity,u.created_at) DESC,u.id LIMIT 500`)
 	if e != nil {
 		return nil, e
 	}
-	out := make([]app.Student, 0, len(rows))
-	for _, v := range rows {
-		out = append(out, app.Student{ID: str(v.ID), DisplayName: v.DisplayName, Email: v.Email, TelegramUsername: v.TelegramUsername, TelegramID: v.TelegramID})
+	defer rows.Close()
+	out := make([]app.Student, 0)
+	for rows.Next() {
+		var v app.Student
+		var uid pgtype.UUID
+		var last pgtype.Timestamptz
+		var avg, best, latest pgtype.Float8
+		if e = rows.Scan(&uid, &v.DisplayName, &v.Email, &v.TelegramUsername, &v.TelegramID, &v.JoinedAt, &last, &v.Attempts, &v.CompletedMocks, &v.PracticeAnswers, &v.WritingReports, &v.SpeakingReports, &avg, &best, &latest); e != nil {
+			return nil, e
+		}
+		v.ID = str(uid)
+		v.LastActivityAt = timePtr(last)
+		v.AverageBand = floatPtr(avg)
+		v.BestBand = floatPtr(best)
+		v.LatestBand = floatPtr(latest)
+		out = append(out, v)
 	}
+	return out, rows.Err()
+}
+func timePtr(v pgtype.Timestamptz) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	t := v.Time
+	return &t
+}
+func floatPtr(v pgtype.Float8) *float64 {
+	if !v.Valid {
+		return nil
+	}
+	n := v.Float64
+	return &n
+}
+func (r *Repository) StudentProgress(ctx context.Context, studentID string) (app.StudentProgress, error) {
+	uid, e := id(studentID)
+	if e != nil {
+		return app.StudentProgress{}, app.ErrStudentNotFound
+	}
+	students, e := r.ListStudents(ctx)
+	if e != nil {
+		return app.StudentProgress{}, e
+	}
+	var student *app.Student
+	for i := range students {
+		if students[i].ID == studentID {
+			student = &students[i]
+			break
+		}
+	}
+	if student == nil {
+		return app.StudentProgress{}, app.ErrStudentNotFound
+	}
+	out := app.StudentProgress{Student: *student, Skills: []app.StudentSkill{}, Attempts: []app.StudentAttempt{}, Reports: []app.StudentAIReport{}}
+	rows, e := r.p.Query(ctx, `SELECT ev.skill::text,count(*)::int,avg(a.band_score)::float8,max(a.band_score)::float8,(array_agg(a.band_score ORDER BY a.scored_at DESC))[1]::float8 FROM attempts a JOIN exam_versions ev ON ev.id=a.exam_version_id WHERE a.user_id=$1 AND a.status='scored' GROUP BY ev.skill ORDER BY ev.skill`, uid)
+	if e != nil {
+		return out, e
+	}
+	for rows.Next() {
+		var v app.StudentSkill
+		if e = rows.Scan(&v.Skill, &v.Completed, &v.AverageBand, &v.BestBand, &v.LatestBand); e != nil {
+			rows.Close()
+			return out, e
+		}
+		out.Skills = append(out.Skills, v)
+	}
+	if e = rows.Err(); e != nil {
+		rows.Close()
+		return out, e
+	}
+	rows.Close()
+	rows, e = r.p.Query(ctx, `SELECT a.id,ev.title,ev.skill::text,a.status::text,a.started_at,a.submitted_at,a.band_score::float8,count(aa.question_id)::int,count(*) FILTER(WHERE aa.is_correct)::int,a.question_count FROM attempts a JOIN exam_versions ev ON ev.id=a.exam_version_id LEFT JOIN attempt_answers aa ON aa.attempt_id=a.id WHERE a.user_id=$1 GROUP BY a.id,ev.title,ev.skill ORDER BY a.started_at DESC LIMIT 100`, uid)
+	if e != nil {
+		return out, e
+	}
+	for rows.Next() {
+		var v app.StudentAttempt
+		var aid pgtype.UUID
+		var submitted pgtype.Timestamptz
+		var band pgtype.Float8
+		if e = rows.Scan(&aid, &v.Title, &v.Skill, &v.Status, &v.StartedAt, &submitted, &band, &v.Answered, &v.Correct, &v.QuestionCount); e != nil {
+			rows.Close()
+			return out, e
+		}
+		v.ID = str(aid)
+		v.SubmittedAt = timePtr(submitted)
+		v.BandScore = floatPtr(band)
+		out.Attempts = append(out.Attempts, v)
+	}
+	if e = rows.Err(); e != nil {
+		rows.Close()
+		return out, e
+	}
+	rows.Close()
+	rows, e = r.p.Query(ctx, `SELECT id,'writing',left(prompt,180),status,CASE WHEN jsonb_typeof(report->'overall')='number' THEN (report->>'overall')::float8 END,updated_at FROM writing_submissions WHERE user_id=$1 UNION ALL SELECT id,'speaking',left(topic,180),status,CASE WHEN jsonb_typeof(report->'overall')='number' THEN (report->>'overall')::float8 END,updated_at FROM speaking_sessions WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 100`, uid)
+	if e != nil {
+		return out, e
+	}
+	for rows.Next() {
+		var v app.StudentAIReport
+		var rid pgtype.UUID
+		var overall pgtype.Float8
+		if e = rows.Scan(&rid, &v.Kind, &v.Title, &v.Status, &overall, &v.UpdatedAt); e != nil {
+			rows.Close()
+			return out, e
+		}
+		v.ID = str(rid)
+		v.Overall = floatPtr(overall)
+		out.Reports = append(out.Reports, v)
+	}
+	if e = rows.Err(); e != nil {
+		rows.Close()
+		return out, e
+	}
+	rows.Close()
 	return out, nil
 }
+
 func content(v db.ManagedContent) app.ManagedContent {
 	out := app.ManagedContent{ID: str(v.ID), Kind: v.Kind, Slug: v.Slug, Title: v.Title, Summary: v.Summary, Status: v.Status, SortOrder: v.SortOrder, Data: json.RawMessage(v.Data), CreatedAt: v.CreatedAt.Time, UpdatedAt: v.UpdatedAt.Time}
 	if v.StartsAt.Valid {

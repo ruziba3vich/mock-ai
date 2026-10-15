@@ -18,6 +18,7 @@ var ErrUnauthorized = errors.New("invalid admin credentials or temporarily unava
 var ErrInvalid = errors.New("valid email, name and a password of 12–1024 bytes are required")
 var ErrInvalidContent = errors.New("content fields are invalid")
 var ErrContentNotFound = errors.New("content item not found")
+var ErrStudentNotFound = errors.New("student not found")
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
@@ -27,11 +28,54 @@ type Admin struct {
 	DisplayName string `json:"display_name"`
 }
 type Student struct {
-	ID               string `json:"id"`
-	DisplayName      string `json:"display_name"`
-	Email            string `json:"email,omitempty"`
-	TelegramUsername string `json:"telegram_username,omitempty"`
-	TelegramID       string `json:"telegram_id,omitempty"`
+	ID               string     `json:"id"`
+	DisplayName      string     `json:"display_name"`
+	Email            string     `json:"email,omitempty"`
+	TelegramUsername string     `json:"telegram_username,omitempty"`
+	TelegramID       string     `json:"telegram_id,omitempty"`
+	JoinedAt         time.Time  `json:"joined_at"`
+	LastActivityAt   *time.Time `json:"last_activity_at,omitempty"`
+	Attempts         int32      `json:"attempts"`
+	CompletedMocks   int32      `json:"completed_mocks"`
+	PracticeAnswers  int32      `json:"practice_answers"`
+	WritingReports   int32      `json:"writing_reports"`
+	SpeakingReports  int32      `json:"speaking_reports"`
+	AverageBand      *float64   `json:"average_band"`
+	BestBand         *float64   `json:"best_band"`
+	LatestBand       *float64   `json:"latest_band"`
+}
+type StudentAttempt struct {
+	ID            string     `json:"id"`
+	Title         string     `json:"title"`
+	Skill         string     `json:"skill"`
+	Status        string     `json:"status"`
+	StartedAt     time.Time  `json:"started_at"`
+	SubmittedAt   *time.Time `json:"submitted_at,omitempty"`
+	BandScore     *float64   `json:"band_score"`
+	Answered      int32      `json:"answered"`
+	Correct       int32      `json:"correct"`
+	QuestionCount int32      `json:"question_count"`
+}
+type StudentSkill struct {
+	Skill       string  `json:"skill"`
+	Completed   int32   `json:"completed"`
+	AverageBand float64 `json:"average_band"`
+	BestBand    float64 `json:"best_band"`
+	LatestBand  float64 `json:"latest_band"`
+}
+type StudentAIReport struct {
+	ID        string    `json:"id"`
+	Kind      string    `json:"kind"`
+	Title     string    `json:"title"`
+	Status    string    `json:"status"`
+	Overall   *float64  `json:"overall"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+type StudentProgress struct {
+	Student  Student           `json:"student"`
+	Skills   []StudentSkill    `json:"skills"`
+	Attempts []StudentAttempt  `json:"attempts"`
+	Reports  []StudentAIReport `json:"reports"`
 }
 type Credential struct {
 	Admin
@@ -93,6 +137,7 @@ type Repository interface {
 	UpdateContent(context.Context, string, ManagedContent) (ManagedContent, error)
 	DeleteContent(context.Context, string) error
 	ListStudents(context.Context) ([]Student, error)
+	StudentProgress(context.Context, string) (StudentProgress, error)
 }
 type Service struct {
 	repository Repository
@@ -175,6 +220,12 @@ func (s *Service) ListContent(ctx context.Context, kind string) ([]ManagedConten
 }
 func (s *Service) ListStudents(ctx context.Context) ([]Student, error) {
 	return s.repository.ListStudents(ctx)
+}
+func (s *Service) StudentProgress(ctx context.Context, id string) (StudentProgress, error) {
+	if !regexp.MustCompile(`^[0-9a-fA-F-]{36}$`).MatchString(id) {
+		return StudentProgress{}, ErrStudentNotFound
+	}
+	return s.repository.StudentProgress(ctx, id)
 }
 func (s *Service) SaveContent(ctx context.Context, adminID string, item ManagedContent) (ManagedContent, error) {
 	item.Kind = strings.TrimSpace(item.Kind)
